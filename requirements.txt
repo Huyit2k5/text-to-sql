@@ -1,0 +1,5 @@
+anthropic>=1.9
+streamlit>=1.40
+pandas>=2.0
+psycopg[binary]>=3.2
+sqlglot>=25

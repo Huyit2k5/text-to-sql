@@ -1,0 +1,34 @@
+{
+  "gold_false_positives": [],
+  "stats": {
+    "-": {
+      "đúng, không báo": 514,
+      "bỏ sót": 63
+    },
+    "TỔNG": {
+      "đúng, không báo": 514,
+      "bỏ sót": 63,
+      "báo đúng": 14
+    },
+    "R1": {
+      "báo đúng": 4
+    },
+    "R2": {
+      "báo đúng": 10
+    }
+  },
+  "examples": {
+    "R1 báo đúng": [
+      "postgres/baseline/h05",
+      "postgres/docs/h05",
+      "postgres_run1/baseline/h05",
+      "postgres_run1/docs/h05"
+    ],
+    "R2 báo đúng": [
+      "postgres/baseline/h06",
+      "postgres/docs/h06",
+      "postgres/fewshot/h06",
+      "postgres/linking/h06"
+    ]
+  }
+}

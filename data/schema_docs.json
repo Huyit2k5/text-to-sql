@@ -1,0 +1,112 @@
+{
+  "business_rules": [
+    "Doanh thu (revenue) = SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount)), CHỈ tính các đơn có orders.status = 4 (hoàn thành). Không cộng shipping_fee.",
+    "Giá bán thực tế nằm ở order_items.unit_price (giá lúc đặt); products.unit_price là giá niêm yết hiện tại.",
+    "Số lượng bán ra = SUM(order_items.quantity) của các đơn hoàn thành (status = 4), trừ khi câu hỏi nói rõ khác.",
+    "Đếm 'số đơn hàng' tính mọi trạng thái, trừ khi câu hỏi nói rõ (ví dụ 'đơn hoàn thành', 'đơn bị hủy').",
+    "Các cột ngày: orders.order_date, customers.created_at, reviews.created_at (ngày, định dạng YYYY-MM-DD). Hôm nay là 2025-06-30.",
+    "Cột `name` có ở customers, products, suppliers: luôn dùng alias bảng (c.name, p.name, s.name) và đặt tên cột kết quả rõ ràng."
+  ],
+  "tables": {
+    "customers": {
+      "description": "Khách hàng (người mua, khách, client)",
+      "columns": {
+        "customer_id": "Mã khách hàng",
+        "name": "Họ tên khách hàng",
+        "email": "Email khách hàng (dữ liệu nhạy cảm)",
+        "phone": "Số điện thoại (dữ liệu nhạy cảm)",
+        "city": "Thành phố / tỉnh của khách hàng",
+        "segment": "Phân khúc: 'retail' = khách lẻ, 'wholesale' = khách sỉ/đại lý, 'vip' = khách VIP",
+        "created_at": "Ngày khách đăng ký tài khoản"
+      },
+      "keywords": "khách hàng người mua thành phố phân khúc vip sỉ lẻ đăng ký chi tiêu"
+    },
+    "suppliers": {
+      "description": "Nhà cung cấp / hãng phân phối sản phẩm",
+      "columns": {
+        "supplier_id": "Mã nhà cung cấp",
+        "name": "Tên nhà cung cấp",
+        "country": "Quốc gia của nhà cung cấp"
+      },
+      "keywords": "nhà cung cấp hãng quốc gia"
+    },
+    "products": {
+      "description": "Sản phẩm (mặt hàng) đang hoặc đã từng bán",
+      "columns": {
+        "product_id": "Mã sản phẩm",
+        "name": "Tên sản phẩm",
+        "category": "Danh mục / loại sản phẩm",
+        "supplier_id": "Nhà cung cấp, khóa ngoại tới suppliers.supplier_id",
+        "unit_price": "Giá niêm yết hiện tại (VND)",
+        "is_active": "1 = đang kinh doanh, 0 = đã ngừng bán"
+      },
+      "keywords": "sản phẩm mặt hàng danh mục giá niêm yết ngừng bán điện thoại laptop phụ kiện máy tính bảng đồng hồ"
+    },
+    "orders": {
+      "description": "Đơn hàng (đơn đặt hàng, giao dịch mua)",
+      "columns": {
+        "order_id": "Mã đơn hàng",
+        "customer_id": "Khách đặt đơn, khóa ngoại tới customers.customer_id",
+        "order_date": "Ngày đặt hàng (YYYY-MM-DD)",
+        "status": "Trạng thái: 1 = chờ xử lý, 2 = đang giao, 3 = đã hủy, 4 = hoàn thành",
+        "payment_method": "Hình thức thanh toán: 'cod' = thanh toán khi nhận hàng, 'card' = thẻ, 'bank_transfer' = chuyển khoản",
+        "shipping_fee": "Phí vận chuyển (VND), không tính vào doanh thu"
+      },
+      "keywords": "đơn hàng đơn đặt hàng trạng thái hủy hoàn thành đang giao thanh toán phí vận chuyển tháng năm quý doanh thu"
+    },
+    "order_items": {
+      "description": "Chi tiết đơn hàng: từng sản phẩm trong một đơn",
+      "columns": {
+        "order_item_id": "Mã dòng chi tiết",
+        "order_id": "Khóa ngoại tới orders.order_id",
+        "product_id": "Khóa ngoại tới products.product_id",
+        "quantity": "Số lượng mua",
+        "unit_price": "Đơn giá lúc bán (VND), trước chiết khấu",
+        "discount": "Tỉ lệ chiết khấu (0.1 = giảm 10%)"
+      },
+      "keywords": "doanh thu doanh số bán ra bán được số lượng chi tiêu giá trị đơn chiết khấu tỉ trọng"
+    },
+    "reviews": {
+      "description": "Đánh giá / nhận xét sản phẩm của khách hàng",
+      "columns": {
+        "review_id": "Mã đánh giá",
+        "product_id": "Sản phẩm được đánh giá, khóa ngoại tới products.product_id",
+        "customer_id": "Người đánh giá, khóa ngoại tới customers.customer_id",
+        "rating": "Số sao 1..5",
+        "comment": "Nội dung nhận xét (văn bản tự do do người dùng nhập)",
+        "created_at": "Ngày viết đánh giá"
+      },
+      "keywords": "đánh giá nhận xét sao điểm review"
+    }
+  },
+  "concepts": {
+    "doanh thu": [
+      "order_items",
+      "orders"
+    ],
+    "doanh số": [
+      "order_items",
+      "orders"
+    ],
+    "chi tiêu": [
+      "order_items",
+      "orders"
+    ],
+    "bán ra": [
+      "order_items",
+      "orders"
+    ],
+    "bán được": [
+      "order_items",
+      "orders"
+    ],
+    "bán chạy": [
+      "order_items",
+      "orders"
+    ],
+    "giá trị đơn": [
+      "order_items",
+      "orders"
+    ]
+  }
+}

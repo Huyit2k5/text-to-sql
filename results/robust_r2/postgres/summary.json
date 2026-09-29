@@ -1,0 +1,105 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "PostgreSQL t2sql_app@db:5432/shop",
+  "n_items": 64,
+  "configs": {
+    "selfcorrect": {
+      "n": 64,
+      "ex": 0.9666666666666667,
+      "ex_lenient": 0.9666666666666667,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.8888888888888888,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 0,
+      "errors": {
+        "other": 1,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 2572.021875,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 97557,
+        "output_tokens": 3353,
+        "seconds": 163.73497119400417
+      }
+    },
+    "shapecheck": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.9444444444444444,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 1,
+      "errors": {
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 4277.446875000001,
+      "usage": {
+        "calls": 65,
+        "input_tokens": 99478,
+        "output_tokens": 3452,
+        "seconds": 272.946307631988
+      }
+    },
+    "consistency": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.9444444444444444,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 1,
+      "errors": {
+        "other": 1
+      },
+      "avg_latency_ms": 4288.65625,
+      "usage": {
+        "calls": 135,
+        "input_tokens": 207346,
+        "output_tokens": 7455,
+        "seconds": 507.33064613898205
+      }
+    },
+    "robust": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.9444444444444444,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 4743.225,
+      "usage": {
+        "calls": 135,
+        "input_tokens": 206921,
+        "output_tokens": 7241,
+        "seconds": 545.2980231170059
+      }
+    }
+  }
+}

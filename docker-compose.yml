@@ -1,0 +1,52 @@
+# Text-to-SQL: PostgreSQL + app Streamlit.
+#
+#   docker compose up -d --build          # chạy, mở http://localhost:8501
+#   docker compose run --rm app python evaluate.py --configs all   # chấm điểm trên Postgres
+#   docker compose down                   # dừng (giữ dữ liệu);  down -v để xóa luôn dữ liệu
+#
+# Cấu hình lấy từ file .env (xem .env.example): LLM_*, T2SQL_*, POSTGRES_PASSWORD, T2SQL_APP_PASSWORD.
+# Muốn dùng Postgres có sẵn của công ty: đặt T2SQL_DATABASE_URL trong .env trỏ tới DB đó,
+# áp dụng docker/postgres/roles.sql bên DB đó, rồi chỉ chạy `docker compose up -d --build app`.
+
+name: text-to-sql
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shop}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
+      T2SQL_APP_PASSWORD: ${T2SQL_APP_PASSWORD:?Đặt T2SQL_APP_PASSWORD trong .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Chỉ chạy khi volume còn trống (lần đầu). Đổi dữ liệu mẫu: docker compose down -v
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"   # chỉ mở cho máy local, để chạy CLI/evaluate ngoài Docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}   # giờ trong log / kết quả đánh giá
+      # Ghi đè URL trong .env: bên trong mạng Docker, Postgres có tên host là "db".
+      T2SQL_DATABASE_URL: ${T2SQL_DATABASE_URL_DOCKER:-postgresql://t2sql_app:${T2SQL_APP_PASSWORD}@db:5432/${POSTGRES_DB:-shop}}
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    volumes:
+      - ./logs:/app/logs          # log truy vấn + phản hồi người dùng
+      - ./results:/app/results    # kết quả evaluate.py
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
