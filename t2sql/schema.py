@@ -38,6 +38,7 @@ class Schema:
         self.tables = tables
         self.business_rules = business_rules or []
         self.concepts = concepts or {}   # khái niệm nghiệp vụ -> bảng cần dùng (cho schema linking)
+        self.requires: dict[str, set[str]] = {}   # bảng -> bảng luôn phải đi kèm (từ docs "requires")
 
     # ---------- nạp ----------
     @classmethod

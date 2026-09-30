@@ -86,8 +86,9 @@ ERROR_CATEGORIES = {
 }
 
 _LITERAL = re.compile(r"'([^']*)'|\b(\d+(?:\.\d+)?)\b")
-_DATE_FUNCS = re.compile(r"\b(strftime|julianday|date|datetime|extract|date_trunc|to_char|date_part)\s*\(|\binterval\b",
-                         re.I)
+_DATE_FUNCS = re.compile(r"\b(strftime|julianday|date|datetime|extract|date_trunc|to_char|date_part"
+                         r"|todate|toyear|tomonth|toquarter|tostartof\w+|formatdatetime|datediff|subtract\w+|add\w+s"
+                         r")\s*\(|\binterval\b", re.I)
 
 
 def _literals(sql):

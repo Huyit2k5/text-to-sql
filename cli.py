@@ -13,7 +13,6 @@ from t2sql.executor import format_table
 from t2sql.llm import LLMError, default_llm
 from t2sql.logstore import QueryLogger
 from t2sql.pipeline import CONFIGS, TextToSQL
-from t2sql.safety import POLICIES
 
 
 def main():
@@ -25,7 +24,7 @@ def main():
         pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="baseline", choices=list(CONFIGS))
-    ap.add_argument("--role", default="admin", choices=list(POLICIES))
+    ap.add_argument("--role", default="admin", help="vai trò (theo bộ dữ liệu của database; mặc định admin / analyst / sales)")
     ap.add_argument("--max-print", type=int, default=20, help="số dòng tối đa in ra")
     ap.add_argument("-q", "--question", help="hỏi một câu rồi thoát")
     args = ap.parse_args()
@@ -36,6 +35,9 @@ def main():
         sys.exit(f"Không khởi tạo được LLM: {e}")
     logger = QueryLogger()
     pipe = TextToSQL(llm, args.config, logger=logger)
+    POLICIES = pipe.policies
+    if args.role not in POLICIES:
+        sys.exit(f"Không có vai trò {args.role}. Dùng: {', '.join(POLICIES)}")
     role, history, last = args.role, [], None
     multi_turn = pipe.config.rewrite_followups
 

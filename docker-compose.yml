@@ -1,6 +1,6 @@
-# Text-to-SQL: PostgreSQL + app Streamlit.
+# Text-to-SQL: PostgreSQL + ClickHouse (demo) + app Streamlit.
 #
-#   docker compose up -d --build          # chạy, mở http://localhost:8501
+#   docker compose up -d --build          # chạy, mở http://localhost:8501 (chọn Database trong sidebar)
 #   docker compose run --rm app python evaluate.py --configs all   # chấm điểm trên Postgres
 #   docker compose down                   # dừng (giữ dữ liệu);  down -v để xóa luôn dữ liệu
 #
@@ -31,6 +31,32 @@ services:
       timeout: 3s
       retries: 20
 
+  # ClickHouse demo (cùng dữ liệu shop). Chạy riêng:  docker compose up -d clickhouse
+  # Chấm điểm:  python evaluate.py --db "$T2SQL_DATABASE_URL_CLICKHOUSE" --configs robust
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Đặt CLICKHOUSE_PASSWORD trong .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1     # cho user quản trị tạo user/role bằng SQL
+      T2SQL_CH_PASSWORD: ${T2SQL_CH_PASSWORD:?Đặt T2SQL_CH_PASSWORD trong .env}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./docker/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/clickhouse/sql:/t2sql/sql:ro
+      - ./docker/clickhouse/config.d/t2sql.xml:/etc/clickhouse-server/config.d/t2sql.xml:ro
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"   # HTTP interface, chỉ mở cho máy local
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   app:
     build: .
     restart: unless-stopped
@@ -39,6 +65,9 @@ services:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}   # giờ trong log / kết quả đánh giá
       # Ghi đè URL trong .env: bên trong mạng Docker, Postgres có tên host là "db".
       T2SQL_DATABASE_URL: ${T2SQL_DATABASE_URL_DOCKER:-postgresql://t2sql_app:${T2SQL_APP_PASSWORD}@db:5432/${POSTGRES_DB:-shop}}
+      # Database thứ hai để chọn trong sidebar của app (host "clickhouse" trong mạng Docker).
+      T2SQL_DATABASE_URL_CLICKHOUSE: clickhouse://t2sql:${T2SQL_CH_PASSWORD:-}@clickhouse:8123/shop
+      T2SQL_DATABASE_URL_EINVOICE: clickhouse://t2sql:${T2SQL_CH_PASSWORD:-}@clickhouse:8123/einvoice
     ports:
       - "${APP_PORT:-8501}:8501"
     volumes:
@@ -50,3 +79,4 @@ services:
 
 volumes:
   pgdata:
+  chdata:

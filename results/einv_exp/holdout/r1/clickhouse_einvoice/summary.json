@@ -1,0 +1,113 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 44,
+  "configs": {
+    "shapecheck": {
+      "n": 44,
+      "ex": 0.85,
+      "ex_lenient": 0.85,
+      "by_difficulty": {
+        "easy": 0.8,
+        "medium": 0.7857142857142857,
+        "hard": 0.9375,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "other": 2,
+        "wrong_filter": 1,
+        "wrong_table": 2,
+        "date_function": 1
+      },
+      "avg_latency_ms": 5453.863636363636,
+      "usage": {
+        "calls": 47,
+        "input_tokens": 213952,
+        "output_tokens": 3482,
+        "seconds": 210.69336689973716
+      }
+    },
+    "lookup": {
+      "n": 44,
+      "ex": 0.9,
+      "ex_lenient": 0.9,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.7857142857142857,
+        "hard": 0.9375,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 2,
+        "other": 2
+      },
+      "avg_latency_ms": 10967.572727272727,
+      "usage": {
+        "calls": 47,
+        "input_tokens": 230191,
+        "output_tokens": 3661,
+        "seconds": 459.9423260000767
+      }
+    },
+    "costguard": {
+      "n": 44,
+      "ex": 0.875,
+      "ex_lenient": 0.875,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.7857142857142857,
+        "hard": 0.875,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 2,
+        "other": 1,
+        "date_function": 1,
+        "business_logic": 1
+      },
+      "avg_latency_ms": 9580.209090909091,
+      "usage": {
+        "calls": 47,
+        "input_tokens": 229793,
+        "output_tokens": 3527,
+        "seconds": 401.8936502998695
+      }
+    },
+    "verify": {
+      "n": 44,
+      "ex": 0.9,
+      "ex_lenient": 0.9,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.7857142857142857,
+        "hard": 0.9375,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 8,
+      "errors": {
+        "wrong_table": 2,
+        "other": 1,
+        "business_logic": 1
+      },
+      "avg_latency_ms": 9916.431818181818,
+      "usage": {
+        "calls": 90,
+        "input_tokens": 315379,
+        "output_tokens": 4999,
+        "seconds": 407.90848890016787
+      }
+    }
+  }
+}

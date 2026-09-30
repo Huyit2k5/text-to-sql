@@ -16,7 +16,7 @@ import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from t2sql import ROOT  # import t2sql cũng nạp .env
+from t2sql import ROOT, datasets  # import t2sql cũng nạp .env
 from t2sql.db import make_backend
 from t2sql.dialect import example_sql
 from t2sql.evaluation import ERROR_CATEGORIES, categorize, results_match
@@ -27,7 +27,9 @@ DATASET = os.path.join(ROOT, "eval", "dataset.json")
 RESULTS = os.path.join(ROOT, "results")
 LABELS = {"baseline": "Baseline (Mức 1)", "docs": "+ Mô tả cột", "fewshot": "+ Few-shot",
           "linking": "+ Schema linking", "selfcorrect": "+ Tự sửa lỗi", "production": "Production (Mức 3)",
-          "shapecheck": "+ Kiểm tra hình dạng", "consistency": "+ Self-consistency", "robust": "+ Hình dạng + Self-consistency"}
+          "shapecheck": "+ Kiểm tra hình dạng", "consistency": "+ Self-consistency", "robust": "+ Hình dạng + Self-consistency",
+          "lookup": "+ Danh mục, gợi ý lỗi", "costguard": "+ Chặn truy vấn nặng", "verify": "+ Tự soát logic",
+          "reasoning": "+ Reasoning câu khó"}
 
 
 def oracle_llm(items):
@@ -170,24 +172,27 @@ def main():
     ap.add_argument("--oracle", action="store_true", help="dùng LLM giả trả về SQL chuẩn (kiểm tra harness)")
     ap.add_argument("--out", default=RESULTS)
     ap.add_argument("--db", default=None, help="URL database (mặc định lấy T2SQL_DATABASE_URL; trống = SQLite)")
+    ap.add_argument("--dataset", default=None,
+                    help="file câu hỏi đánh giá (mặc định: theo tên database, datasets/<tên>/eval.json hoặc eval/dataset.json)")
     ap.add_argument("--resume", action="store_true",
                     help="giữ kết quả đã có trong results/.../<config>.jsonl, chỉ chạy các câu còn thiếu hoặc bị lỗi LLM")
     args = ap.parse_args()
 
     names = ABLATION_ORDER if args.configs == ["all"] else args.configs
-    with open(DATASET, encoding="utf-8") as f:
+    ex = make_backend(args.db, max_rows=100_000, timeout_s=60)
+    ds = datasets.for_backend(ex)
+    with open(args.dataset or ds.eval_path or DATASET, encoding="utf-8") as f:
         items = json.load(f)
     if args.limit:
         items = items[: args.limit]
     items_by_id = {it["id"]: it for it in items}
 
-    ex = make_backend(args.db, max_rows=100_000, timeout_s=60)
-    print(f"Database: {ex.describe()}", flush=True)
+    print(f"Database: {ex.describe()} · bộ dữ liệu {ds.name} ({len(items)} câu)", flush=True)
     gold = {}
     for it in items:
         if it.get("sql"):
-            # SQL chuẩn viết cho SQLite -> chuyển sang dialect của DB đích (ưu tiên bản viết tay sql_pg...)
-            it["sql_source"], it["sql"] = it["sql"], example_sql(it, ex.dialect)
+            # SQL chuẩn viết cho dialect của bộ dữ liệu (shop: SQLite) -> DB đích (ưu tiên bản viết tay sql_pg...)
+            it["sql_source"], it["sql"] = it["sql"], example_sql(it, ex.dialect, source=ds.sql_dialect)
             g = ex.run(it["sql"], safe=False)
             if not g.ok:
                 sys.exit(f"SQL chuẩn của {it['id']} lỗi trên {ex.display_name}: {g.error}\n{it['sql']}")
@@ -195,7 +200,7 @@ def main():
 
     out_dir = args.out
     if ex.dialect != "sqlite":
-        out_dir = os.path.join(out_dir, ex.dialect)
+        out_dir = os.path.join(out_dir, ex.dialect if ds.name == "shop" else f"{ex.dialect}_{ds.name}")
     if args.oracle:
         out_dir = os.path.join(out_dir, "oracle")
     os.makedirs(out_dir, exist_ok=True)

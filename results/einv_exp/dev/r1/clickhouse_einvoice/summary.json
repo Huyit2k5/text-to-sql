@@ -1,0 +1,118 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "shapecheck": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 3,
+        "date_function": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 5926.141935483871,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 310687,
+        "output_tokens": 4849,
+        "seconds": 344.43336889962666
+      }
+    },
+    "lookup": {
+      "n": 62,
+      "ex": 0.9137931034482759,
+      "ex_lenient": 0.9310344827586207,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.75,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 2,
+        "wrong_join": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 7721.491935483871,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 334061,
+        "output_tokens": 4849,
+        "seconds": 455.83629440004006
+      }
+    },
+    "costguard": {
+      "n": 62,
+      "ex": 0.9137931034482759,
+      "ex_lenient": 0.9310344827586207,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.75,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 4,
+      "errors": {
+        "execution_error": 1,
+        "wrong_join": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1,
+        "wrong_table": 1
+      },
+      "avg_latency_ms": 4777.179032258065,
+      "usage": {
+        "calls": 69,
+        "input_tokens": 351496,
+        "output_tokens": 5324,
+        "seconds": 274.08566379977856
+      }
+    },
+    "verify": {
+      "n": 62,
+      "ex": 0.8448275862068966,
+      "ex_lenient": 0.8620689655172413,
+      "by_difficulty": {
+        "easy": 0.9375,
+        "medium": 0.9545454545454546,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 13,
+      "errors": {
+        "business_logic": 3,
+        "wrong_table": 2,
+        "wrong_filter": 2,
+        "date_function": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 9349.204838709677,
+      "usage": {
+        "calls": 135,
+        "input_tokens": 486067,
+        "output_tokens": 11924,
+        "seconds": 555.882686099736
+      }
+    }
+  }
+}

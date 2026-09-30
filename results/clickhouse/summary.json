@@ -1,0 +1,188 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/shop",
+  "n_items": 64,
+  "configs": {
+    "baseline": {
+      "n": 64,
+      "ex": 0.5166666666666667,
+      "ex_lenient": 0.5166666666666667,
+      "by_difficulty": {
+        "easy": 0.9,
+        "medium": 0.36363636363636365,
+        "hard": 0.2777777777777778,
+        "unanswerable": 0.75
+      },
+      "refusal_acc": 0.75,
+      "exec_errors": 3,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 1,
+        "other": 4,
+        "wrong_table": 7,
+        "business_logic": 11,
+        "execution_error": 3,
+        "wrong_aggregation": 2,
+        "wrong_join": 1,
+        "should_refuse": 1
+      },
+      "avg_latency_ms": 2233.9953125,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 52962,
+        "output_tokens": 3265,
+        "seconds": 142.15393480006605
+      }
+    },
+    "docs": {
+      "n": 64,
+      "ex": 0.9,
+      "ex_lenient": 0.9166666666666666,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.9545454545454546,
+        "hard": 0.7222222222222222,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 4,
+      "retried": 0,
+      "errors": {
+        "other": 1,
+        "execution_error": 4,
+        "wrong_filter": 1
+      },
+      "avg_latency_ms": 3745.4734375,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 125026,
+        "output_tokens": 3841,
+        "seconds": 238.65226110059302
+      }
+    },
+    "fewshot": {
+      "n": 64,
+      "ex": 0.9166666666666666,
+      "ex_lenient": 0.9166666666666666,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.8636363636363636,
+        "hard": 0.8888888888888888,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 3,
+      "retried": 0,
+      "errors": {
+        "execution_error": 3,
+        "wrong_filter": 1,
+        "wrong_refusal": 1
+      },
+      "avg_latency_ms": 7491.30625,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 145671,
+        "output_tokens": 3295,
+        "seconds": 478.321481899824
+      }
+    },
+    "linking": {
+      "n": 64,
+      "ex": 0.95,
+      "ex_lenient": 0.95,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.8636363636363636,
+        "hard": 1.0,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 2,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 1,
+        "execution_error": 2
+      },
+      "avg_latency_ms": 3560.4703125,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 107961,
+        "output_tokens": 3273,
+        "seconds": 226.74629369936883
+      }
+    },
+    "selfcorrect": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.9545454545454546,
+        "hard": 1.0,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 1
+      },
+      "avg_latency_ms": 3667.9109375,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 107961,
+        "output_tokens": 3276,
+        "seconds": 233.356931999675
+      }
+    },
+    "shapecheck": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.9545454545454546,
+        "hard": 1.0,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 1
+      },
+      "avg_latency_ms": 3142.409375,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 107961,
+        "output_tokens": 3273,
+        "seconds": 200.17344230017625
+      }
+    },
+    "robust": {
+      "n": 64,
+      "ex": 0.9833333333333333,
+      "ex_lenient": 0.9833333333333333,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.9545454545454546,
+        "hard": 1.0,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 1,
+      "errors": {
+        "wrong_filter": 1
+      },
+      "avg_latency_ms": 5142.315625,
+      "usage": {
+        "calls": 133,
+        "input_tokens": 225747,
+        "output_tokens": 7119,
+        "seconds": 613.4693363002734
+      }
+    }
+  }
+}

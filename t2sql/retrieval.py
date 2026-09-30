@@ -70,7 +70,8 @@ class FewShotRetriever:
         return out
 
 
-_TABLE_REF = re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)
+# tên bảng có thể có dấu nháy ("orders", `orders`, [orders]) và tiền tố database/schema (shop.orders): lấy phần tên bảng
+_TABLE_REF = re.compile(r'\b(?:FROM|JOIN)\s+(?:[`"\[]?[A-Za-z_][A-Za-z0-9_]*[`"\]]?\s*\.\s*)?[`"\[]?([A-Za-z_][A-Za-z0-9_]*)', re.I)
 _CTE_NAME = re.compile(r"(?:\bWITH|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(", re.I)
 
 
@@ -119,7 +120,8 @@ class SchemaLinker:
     REQUIRES = {"order_items": {"orders"}}
 
     def _required(self, keep: set[str]) -> set[str]:
-        return {r for t in keep for r in self.REQUIRES.get(t, set()) if r in self.schema.tables}
+        requires = getattr(self.schema, "requires", None) or self.REQUIRES
+        return {r for t in keep for r in requires.get(t, set()) if r in self.schema.tables}
 
     def _bridges(self, keep: set[str]) -> set[str]:
         """Thêm bảng nằm giữa hai bảng đã chọn (ví dụ customers ↔ order_items cần orders)."""

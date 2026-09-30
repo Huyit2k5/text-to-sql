@@ -26,8 +26,9 @@ class BaseLLM:
         self._lock = threading.Lock()
 
     def complete(self, system: str, messages: list[dict], max_tokens: int = 16000,
-                 temperature: float | None = None) -> str:
-        """temperature=None: dùng mặc định của provider. Self-consistency truyền giá trị > 0 để lấy mẫu đa dạng."""
+                 temperature: float | None = None, reasoning: str | None = None) -> str:
+        """temperature=None: dùng mặc định của provider. Self-consistency truyền giá trị > 0 để lấy mẫu đa dạng.
+        reasoning: ghi đè mức suy nghĩ cho riêng lời gọi này (low / medium / high); None = theo cấu hình chung."""
         raise NotImplementedError
 
     def _record(self, inp, out, secs):
@@ -100,7 +101,7 @@ class ClaudeLLM(BaseLLM):
             self.fallbacks, self.effort = False, None
             return changed
 
-    def complete(self, system, messages, max_tokens=16000, temperature=None):
+    def complete(self, system, messages, max_tokens=16000, temperature=None, reasoning=None):
         # Các model Claude đời mới (Opus 4.7+, Sonnet 5.x, Fable) trả 400 khi nhận temperature, nên bỏ qua tham số này:
         # self-consistency với Claude sẽ ít đa dạng hơn (chỉ khác nhau do bản chất không tất định của model).
         a = self._anthropic
@@ -150,11 +151,13 @@ class ScriptedLLM(BaseLLM):
         self.fn = fn
         self.calls = []
         self.temperatures = []
+        self.reasoning_levels = []
 
-    def complete(self, system, messages, max_tokens=16000, temperature=None):
+    def complete(self, system, messages, max_tokens=16000, temperature=None, reasoning=None):
         with self._lock:
             self.calls.append((system, [dict(m) for m in messages]))
             self.temperatures.append(temperature)
+            self.reasoning_levels.append(reasoning)
         self._record(0, 0, 0.0)
         return self.fn(system, messages)
 
@@ -315,7 +318,7 @@ class OpenAICompatLLM(BaseLLM):
                 time.sleep(3 * attempt)
         raise last
 
-    def complete(self, system, messages, max_tokens=16000, temperature=None):
+    def complete(self, system, messages, max_tokens=16000, temperature=None, reasoning=None):
         payload = {"model": self.model, "messages": [{"role": "system", "content": system}] + messages,
                    "max_tokens": min(max_tokens, self.max_tokens_cap),
                    "temperature": self.temperature if temperature is None else temperature,
@@ -323,6 +326,8 @@ class OpenAICompatLLM(BaseLLM):
         if self.stream:
             payload["stream_options"] = {"include_usage": True}
         payload.update(self.extra_body)
+        if reasoning:
+            payload["reasoning_effort"] = reasoning
         t0 = time.perf_counter()
         text, finish, usage = self._call(payload)
         self._record(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), time.perf_counter() - t0)

@@ -1,4 +1,5 @@
 """Demo Streamlit (Mức 3).  Chạy:  streamlit run app.py"""
+import os
 from dataclasses import replace
 
 import pandas as pd
@@ -7,7 +8,6 @@ import streamlit as st
 from t2sql.llm import default_llm
 from t2sql.logstore import QueryLogger
 from t2sql.pipeline import CONFIGS, TextToSQL
-from t2sql.safety import POLICIES
 from t2sql.viz import choose_view
 
 st.set_page_config(page_title="Text-to-SQL", page_icon="🗄️", layout="wide")
@@ -22,38 +22,62 @@ EXAMPLES = [
 ]
 
 
+def database_choices():
+    """T2SQL_DATABASE_URL (mặc định) + các T2SQL_DATABASE_URL_<TÊN> khác, ví dụ _CLICKHOUSE."""
+    names = {"postgres": "PostgreSQL", "postgresql": "PostgreSQL", "clickhouse": "ClickHouse",
+             "clickhouses": "ClickHouse", "clickhouse+https": "ClickHouse", "sqlite": "SQLite"}
+
+    def label(url):
+        if "://" not in url:
+            return "SQLite · shop"
+        kind = names.get(url.split("://", 1)[0].lower(), url.split("://", 1)[0])
+        db = url.rsplit("/", 1)[-1].split("?", 1)[0]
+        return f"{kind} · {db}" if db else kind
+
+    main = os.environ.get("T2SQL_DATABASE_URL", "").strip()
+    out = {label(main): main}
+    for k, v in sorted(os.environ.items()):
+        if k.startswith("T2SQL_DATABASE_URL_") and k != "T2SQL_DATABASE_URL_DOCKER" and v.strip():
+            name = label(v.strip())
+            out[name if name not in out else k.removeprefix("T2SQL_DATABASE_URL_").title()] = v.strip()
+    return out
+
+
 @st.cache_resource
-def get_pipeline(config_name, explain, consistency):
+def get_pipeline(config_name, explain, consistency, db_url):
     cfg = replace(CONFIGS[config_name], explain=explain)
     if consistency:
         cfg = replace(cfg, n_candidates=3)
-    return TextToSQL(default_llm(), cfg, logger=QueryLogger())
+    return TextToSQL(default_llm(), cfg, db=db_url, logger=QueryLogger())
 
 
 with st.sidebar:
     st.header("Cấu hình")
+    dbs = database_choices()
+    db_label = st.selectbox("Database", list(dbs), disabled=len(dbs) == 1)
     config_name = st.selectbox("Pipeline", list(CONFIGS), index=list(CONFIGS).index("production"))
-    role = st.selectbox("Vai trò người dùng", list(POLICIES))
     explain = st.toggle("Giải thích SQL bằng lời", value=CONFIGS[config_name].explain,
                         help="Thêm một lần gọi model cho mỗi câu hỏi. Tắt đi nếu model chậm.")
     consistency = st.toggle("Self-consistency (3 phương án)", value=CONFIGS[config_name].n_candidates > 1,
                             help="Sinh nhiều câu SQL, chạy cả hai/ba và chọn kết quả được nhiều phương án đồng ý. "
                                  "Tốn 2-3 lần gọi model; cho biết độ tin cậy của câu trả lời.")
-    st.caption(POLICIES[role].describe())
-    if st.button("Xóa hội thoại"):
+    try:
+        pipe = get_pipeline(config_name, explain, consistency, dbs[db_label] or None)
+    except Exception as e:  # thiếu SDK / credentials / không kết nối được DB
+        st.error(f"Không khởi tạo được pipeline: {e}")
+        st.stop()
+    # Vai trò và câu hỏi gợi ý theo bộ dữ liệu của database đang chọn
+    role = st.selectbox("Vai trò người dùng", list(pipe.policies))
+    st.caption(pipe.policies[role].describe())
+    if st.button("Xóa hội thoại") or st.session_state.get("db_label") != db_label:
         st.session_state.turns = []
         st.session_state.history = []
-    st.markdown("**Thử hỏi:**\n" + "\n".join(f"- {e}" for e in EXAMPLES))
+    st.session_state.db_label = db_label
+    st.markdown("**Thử hỏi:**\n" + "\n".join(f"- {e}" for e in (pipe.dataset.example_questions or EXAMPLES)))
 
-st.title("Hỏi dữ liệu bán hàng bằng tiếng Việt")
+st.title(pipe.dataset.docs.get("title") or "Hỏi dữ liệu bán hàng bằng tiếng Việt")
 st.session_state.setdefault("turns", [])
 st.session_state.setdefault("history", [])
-
-try:
-    pipe = get_pipeline(config_name, explain, consistency)
-except Exception as e:  # thiếu SDK / credentials / không kết nối được DB
-    st.error(f"Không khởi tạo được pipeline: {e}")
-    st.stop()
 st.sidebar.caption(f"Database: {pipe.backend.describe()} · Model: {getattr(pipe.llm, 'model', '?')}")
 
 

@@ -1,0 +1,176 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "baseline": {
+      "n": 62,
+      "ex": 0.3620689655172414,
+      "ex_lenient": 0.3793103448275862,
+      "by_difficulty": {
+        "easy": 0.5625,
+        "medium": 0.4090909090909091,
+        "hard": 0.15,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 7,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 11,
+        "wrong_columns": 1,
+        "execution_error": 7,
+        "date_function": 7,
+        "other": 3,
+        "business_logic": 4,
+        "wrong_table": 1,
+        "wrong_refusal": 2,
+        "wrong_join": 1
+      },
+      "avg_latency_ms": 3735.108064516129,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 128743,
+        "output_tokens": 4680,
+        "seconds": 197.26385069999378
+      }
+    },
+    "docs": {
+      "n": 62,
+      "ex": 0.7931034482758621,
+      "ex_lenient": 0.8275862068965517,
+      "by_difficulty": {
+        "easy": 0.9375,
+        "medium": 0.8636363636363636,
+        "hard": 0.6,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 3,
+      "retried": 0,
+      "errors": {
+        "wrong_columns": 2,
+        "wrong_filter": 3,
+        "execution_error": 3,
+        "wrong_join": 1,
+        "date_function": 2,
+        "wrong_table": 1
+      },
+      "avg_latency_ms": 5804.125806451612,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 484127,
+        "output_tokens": 5433,
+        "seconds": 337.84859580011107
+      }
+    },
+    "fewshot": {
+      "n": 62,
+      "ex": 0.8793103448275862,
+      "ex_lenient": 0.8793103448275862,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 3,
+      "retried": 0,
+      "errors": {
+        "wrong_table": 2,
+        "wrong_filter": 1,
+        "execution_error": 3,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 5276.1,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 508222,
+        "output_tokens": 4409,
+        "seconds": 296.58564380032476
+      }
+    },
+    "linking": {
+      "n": 62,
+      "ex": 0.8793103448275862,
+      "ex_lenient": 0.896551724137931,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 3,
+      "retried": 0,
+      "errors": {
+        "execution_error": 3,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1,
+        "wrong_table": 2
+      },
+      "avg_latency_ms": 5790.924193548387,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 288917,
+        "output_tokens": 4307,
+        "seconds": 322.7592624005629
+      }
+    },
+    "selfcorrect": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 3,
+        "execution_error": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 4854.8645161290315,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 310800,
+        "output_tokens": 4809,
+        "seconds": 264.3011924000457
+      }
+    },
+    "shapecheck": {
+      "n": 62,
+      "ex": 0.9137931034482759,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.75,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 3,
+        "execution_error": 1,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 9767.980645161291,
+      "usage": {
+        "calls": 67,
+        "input_tokens": 315781,
+        "output_tokens": 4933,
+        "seconds": 581.0210526998853
+      }
+    }
+  }
+}

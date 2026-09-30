@@ -3,6 +3,7 @@
   (trống)                         -> SQLite data/shop.db
   sqlite:///duong/dan/file.db     -> SQLite
   postgresql://user:pass@host/db  -> PostgreSQL
+  clickhouse://user:pass@host:8123/db  (clickhouses:// cho HTTPS) -> ClickHouse
 """
 import os
 
@@ -17,6 +18,9 @@ def make_backend(url: str | None = None, max_rows: int = 200, timeout_s: float |
         from .postgres import PostgresBackend
         return PostgresBackend(url, max_rows=max_rows, timeout_s=timeout,
                                schema=os.environ.get("T2SQL_DB_SCHEMA") or "public")
+    if url.startswith(("clickhouse://", "clickhouses://", "clickhouse+https://")):
+        from .clickhouse import ClickHouseBackend
+        return ClickHouseBackend(url, max_rows=max_rows, timeout_s=timeout)
     from .sqlite import SQLiteBackend
     path = url.removeprefix("sqlite:///") if url else DEFAULT_DB
     return SQLiteBackend(path, max_rows=max_rows, timeout_s=timeout)

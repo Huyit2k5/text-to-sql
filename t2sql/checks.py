@@ -14,6 +14,7 @@ Quy tắc:
   R7  mọi câu                                                                        -> không phải toàn NULL
 """
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 _NUM = (int, float)
@@ -29,6 +30,7 @@ def _norm(q: str) -> str:
     return re.sub(r"\s+", " ", (q or "").lower()).strip()
 
 
+_EACH = re.compile(r"\b(mỗi|từng)\b")
 _GROUP = re.compile(r"\b(mỗi|từng)\b|\btheo (?!số lượng|doanh thu|giá|số sao|điểm)")
 _LIST = re.compile(r"\b(liệt kê|danh sách|những)\b")
 _SCALAR = re.compile(r"\b(bao nhiêu|mấy|tổng|trung bình|tỉ lệ|phần trăm)\b")
@@ -47,6 +49,13 @@ def _text_col(columns, rows):
         if vals and all(isinstance(v, str) for v in vals):
             return i
     return None
+
+
+def _group_col(columns, rows):
+    """Cột chữ có ít giá trị khác nhau nhất: cột nhóm trong kết quả "top N mỗi nhóm"."""
+    text = [i for i in range(len(columns))
+            if any(r[i] is not None for r in rows) and all(isinstance(r[i], str) for r in rows if r[i] is not None)]
+    return min(text, key=lambda i: len({r[i] for r in rows}), default=None)
 
 
 def _num_cols(columns, rows):
@@ -89,10 +98,20 @@ def check_result(question: str, columns: list[str], rows: list[tuple]) -> list[I
         issues.append(Issue("R7", "Kết quả chỉ có giá trị NULL. Có thể điều kiện lọc, JOIN hoặc phép gộp chưa đúng."))
         return issues
 
-    # R4: top N
+    # R4: top N (toàn bộ), hoặc top N trong mỗi nhóm ("top 3 sản phẩm trong từng danh mục")
     m = _TOPN.search(q)
     top_n = int(m.group(1) or m.group(2)) if m else None
-    if top_n and n > top_n:
+    gi = _group_col(columns, rows) if top_n and _EACH.search(q) else None
+    if gi is not None and len({r[gi] for r in rows}) * 2 > n:
+        gi = None      # cột chữ ít giá trị nhất vẫn gần như duy nhất: đó là cột xếp hạng, không phải cột nhóm
+    if gi is not None:
+        counts = Counter(r[gi] for r in rows)
+        worst, k = counts.most_common(1)[0]
+        if k > top_n:
+            issues.append(Issue("R4", f"Câu hỏi yêu cầu {top_n} kết quả đứng đầu trong mỗi nhóm nhưng nhóm "
+                                      f"'{worst}' có {k} dòng. Có thể thiếu bước giới hạn {top_n} dòng mỗi nhóm."))
+        grouped = False            # đã kiểm tra theo nhóm, không áp R2/R3
+    elif top_n and n > top_n:
         issues.append(Issue("R4", f"Câu hỏi yêu cầu {top_n} kết quả đứng đầu nhưng kết quả có {n} dòng. "
                                   f"Có thể thiếu ORDER BY ... LIMIT {top_n}."))
 
@@ -111,6 +130,11 @@ def check_result(question: str, columns: list[str], rows: list[tuple]) -> list[I
     # R3: gộp theo nhóm mà cột nhóm lặp nhiều (tên trùng lặp lẻ tẻ thì bỏ qua, ví dụ hai khách cùng tên)
     elif grouped and not listing and n >= 4:
         gi = _text_col(columns, rows)
+        # nhóm theo nhiều cột chữ (ví dụ loại hóa đơn × có mã/không mã): xét tổ hợp của các cột đó
+        text_cols = [i for i in range(len(columns)) if any(r[i] is not None for r in rows)
+                     and all(isinstance(r[i], str) for r in rows if r[i] is not None)]
+        if gi is not None and len({tuple(r[i] for i in text_cols) for r in rows}) * 2 > n:
+            gi = None
         if gi is not None:
             distinct = len(set(r[gi] for r in rows))
             if distinct * 2 <= n:

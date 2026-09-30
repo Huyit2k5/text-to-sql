@@ -1,0 +1,163 @@
+{
+  "title": "Hỏi dữ liệu hóa đơn điện tử bằng tiếng Việt",
+  "sql_dialect": "clickhouse",
+  "business_rules": [
+    "invoices là bảng ReplacingMergeTree: mỗi lần hóa đơn đổi trạng thái có thêm một dòng phiên bản mới. LUÔN đọc invoices bằng FINAL để lấy trạng thái hiện tại: FROM invoices FINAL, hoặc có alias thì FROM invoices AS i FINAL (alias đứng TRƯỚC FINAL). Không có FINAL thì hóa đơn bị đếm trùng và lẫn trạng thái cũ.",
+    "Hóa đơn hợp lệ (đã có hiệu lực; dùng cho doanh thu, số hóa đơn đã phát hành, tiền thuế): status IN ('cqt_cap_ma', 'da_gui_cqt', 'bi_dieu_chinh'). Nháp, đã ký chưa gửi, chờ cấp mã, bị từ chối, đã hủy, bị thay thế đều KHÔNG tính.",
+    "Doanh thu (chưa thuế, VND) = SUM((total_before_tax - total_discount) * exchange_rate) trên hóa đơn hợp lệ. Tiền thuế GTGT (VND) = SUM(total_vat * exchange_rate). Giá trị thanh toán (VND) = SUM(total_amount * exchange_rate). Hóa đơn điều chỉnh (nature = 'dieu_chinh') có thể mang số âm, vẫn cộng vào.",
+    "Mọi cột tiền của invoices và invoice_items tính theo nguyên tệ (cột currency). Quy đổi sang VND phải nhân invoices.exchange_rate (VND có exchange_rate = 1).",
+    "invoice_items không có trạng thái và không có tỷ giá: tính theo dòng hàng phải JOIN (SELECT invoice_id, exchange_rate FROM invoices FINAL WHERE status IN (...hợp lệ...) AND <cùng khoảng thời gian>) theo invoice_id. Doanh thu dòng hàng (VND) = (line_amount - discount_amount) * exchange_rate; thuế dòng hàng (VND) = vat_amount * exchange_rate. Lọc invoice_items theo issued_at để chỉ đọc các tháng cần thiết.",
+    "Múi giờ: invoices.issued_at, invoices.updated_at, invoice_items.issued_at là giờ Việt Nam. tax_messages.sent_at / response_at và api_requests.ts lưu theo UTC: lọc hoặc nhóm theo ngày / tháng / giờ phải đổi sang giờ Việt Nam bằng toTimeZone(col, 'Asia/Ho_Chi_Minh'), ví dụ toDate(toTimeZone(sent_at, 'Asia/Ho_Chi_Minh')), toHour(toTimeZone(ts, 'Asia/Ho_Chi_Minh')).",
+    "daily_seller_stats tổng hợp sẵn theo ngày từ hóa đơn hợp lệ (doanh thu đã trừ chiết khấu và quy đổi VND). Một (day, seller_id) có thể có nhiều dòng: luôn dùng sum(invoice_count), sum(revenue_vnd), sum(vat_vnd), uniqExactMerge(buyers) kèm GROUP BY. Nên dùng bảng này khi chỉ cần số hóa đơn / doanh thu / số người mua theo ngày, tháng, người bán (nhanh hơn nhiều so với invoices).",
+    "Khách hàng của dịch vụ = doanh nghiệp người bán (sellers). Người mua trên hóa đơn = buyers (invoices.buyer_id). Khách lẻ không lấy thông tin: invoices.buyer_id IS NULL. Đếm người mua khác nhau: uniqExact(buyer_id) (tự bỏ NULL).",
+    "Tên doanh nghiệp có thể trùng nhau: nhóm theo seller_id (kèm name), không nhóm chỉ theo name.",
+    "Doanh nghiệp đang hoạt động: sellers.status = 'active'. Chứng thư số còn hiệu lực: revoked = 0 AND valid_from <= toDate('2025-06-30') AND valid_to >= toDate('2025-06-30').",
+    "Hóa đơn có mã của cơ quan thuế: tax_code_type = 'co_ma' (chữ C ở vị trí thứ 2 của ký hiệu); không mã: 'khong_ma'. Hóa đơn GTGT: invoice_type = 'gtgt'; hóa đơn bán hàng: 'ban_hang' (không có thuế GTGT, vat_rate = 'KKKNT').",
+    "Thời gian phản hồi của cơ quan thuế (giây) = dateDiff('second', sent_at, response_at), chỉ tính thông điệp có response_at. Thông điệp 200 = gửi hóa đơn đề nghị cấp mã, 203 = chuyển dữ liệu hóa đơn không mã, 300 = thông báo hủy hóa đơn. Một hóa đơn có thể có nhiều thông điệp (gửi lại sau lỗi kỹ thuật).",
+    "Tỷ lệ lỗi API (%) = 100 * countIf(http_status >= 400) / count(); lỗi hệ thống = http_status >= 500. Phân vị độ trễ (p50, p95, p99) dùng quantileExact(0.95)(latency_ms).",
+    "Doanh thu bán gói dịch vụ = SUM(subscriptions.amount_vnd) với payment_status = 'da_thanh_toan'.",
+    "Thuế suất 10% được giảm còn 8% cho phần lớn hàng hóa, dịch vụ từ 2023-07-01 (Nghị quyết giảm thuế GTGT); một số nhóm (CNTT, viễn thông, sắt thép, xăng dầu, bất động sản) vẫn 10%.",
+    "Luôn lọc theo khoảng thời gian trên cột phân vùng (issued_at, sent_at, ts, day) khi câu hỏi có thời gian, để ClickHouse chỉ đọc các tháng cần thiết. Phần trăm nhân 100 (phép chia / trong ClickHouse đã ra số thực)."
+  ],
+  "tables": {
+    "invoices": {
+      "description": "Hóa đơn điện tử (mỗi hóa đơn một dòng sau FINAL; khoảng 30 triệu hóa đơn từ 2023-01 đến 2025-06)",
+      "keywords": "hóa đơn hđ phát hành lập xuất doanh thu giá trị tiền thuế gtgt vat trạng thái hủy thay thế điều chỉnh cấp mã từ chối ngoại tệ usd tỷ giá kênh khách lẻ số hóa đơn",
+      "columns": {
+        "status": "Trạng thái hiện tại: nhap (nháp), da_ky (đã ký chưa gửi), cho_cap_ma (đã gửi, chờ cơ quan thuế cấp mã), cqt_cap_ma (đã được cấp mã), cqt_tu_choi (cơ quan thuế từ chối), da_gui_cqt (hóa đơn không mã đã chuyển dữ liệu), da_huy (đã hủy), bi_thay_the (bị thay thế bởi hóa đơn khác), bi_dieu_chinh (bị điều chỉnh, vẫn hợp lệ)",
+        "nature": "Tính chất: goc (hóa đơn gốc), thay_the (thay thế hóa đơn related_invoice_id), dieu_chinh (điều chỉnh hóa đơn related_invoice_id, số tiền có thể âm)",
+        "exchange_rate": "Tỷ giá quy đổi sang VND; nhân mọi cột tiền với cột này để ra VND",
+        "version": "Phiên bản bản ghi; dùng FINAL để chỉ giữ phiên bản mới nhất"
+      }
+    },
+    "invoice_items": {
+      "description": "Dòng hàng hóa, dịch vụ trên hóa đơn (khoảng 100 triệu dòng). Không có trạng thái, không có tỷ giá: JOIN invoices FINAL",
+      "keywords": "dòng hàng mặt hàng hàng hóa dịch vụ sản phẩm nhóm hàng thuế suất 8% 10% 5% chiết khấu đơn giá số lượng khuyến mại đơn vị tính"
+    },
+    "sellers": {
+      "description": "Doanh nghiệp / hộ kinh doanh dùng dịch vụ hóa đơn điện tử (người bán, khách hàng của dịch vụ)",
+      "keywords": "doanh nghiệp công ty người bán khách hàng dịch vụ mã số thuế mst loại hình hộ kinh doanh đăng ký hoạt động ngừng tính năng api quy mô kênh bán đại lý"
+    },
+    "buyers": {
+      "description": "Người mua trên hóa đơn (doanh nghiệp, cá nhân, cơ quan nhà nước, tổ chức nước ngoài)",
+      "keywords": "người mua khách mua bên mua cá nhân cơ quan nhà nước mã số thuế người mua"
+    },
+    "tax_messages": {
+      "description": "Thông điệp trao đổi với cơ quan thuế (gửi hóa đơn, kết quả cấp mã / từ chối). Thời gian lưu theo UTC",
+      "keywords": "cơ quan thuế cqt tổng cục thuế thông điệp gửi phản hồi cấp mã từ chối lỗi kỹ thuật gửi lại thời gian phản hồi"
+    },
+    "tax_error_codes": {
+      "description": "Danh mục mã lỗi phản hồi của cơ quan thuế",
+      "keywords": "mã lỗi lý do từ chối mô tả lỗi nhóm lỗi"
+    },
+    "api_requests": {
+      "description": "Log gọi API tích hợp của doanh nghiệp (khoảng 40 triệu request). Thời gian lưu theo UTC",
+      "keywords": "api request endpoint gọi tích hợp độ trễ latency lỗi http status sự cố p95 tốc độ ký phát hành erp"
+    },
+    "daily_seller_stats": {
+      "description": "Bảng tổng hợp theo ngày, người bán: số hóa đơn hợp lệ, doanh thu VND, thuế VND, tập người mua (phải sum() / uniqExactMerge())",
+      "keywords": "tổng hợp theo ngày doanh thu số hóa đơn người mua khác nhau thống kê nhanh"
+    },
+    "subscriptions": {
+      "description": "Lịch sử doanh nghiệp mua gói dịch vụ hóa đơn",
+      "keywords": "mua gói gia hạn thanh toán doanh thu dịch vụ đơn mua chiết khấu kênh bán hết hạn gói"
+    },
+    "service_plans": {
+      "description": "Danh mục gói dịch vụ (theo số lượng hóa đơn hoặc theo thời gian)",
+      "keywords": "gói dịch vụ bảng giá số hóa đơn không giới hạn"
+    },
+    "certificates": {
+      "description": "Chứng thư số (chữ ký số) của doanh nghiệp dùng để ký hóa đơn",
+      "keywords": "chứng thư số chữ ký số token hsm ký số từ xa hết hạn hiệu lực thu hồi nhà cung cấp ca"
+    },
+    "invoice_series": {
+      "description": "Ký hiệu hóa đơn doanh nghiệp đã đăng ký theo năm",
+      "keywords": "ký hiệu mẫu số đăng ký ký hiệu"
+    },
+    "provinces": {
+      "description": "Danh mục 63 tỉnh/thành và vùng miền",
+      "keywords": "tỉnh thành phố địa phương vùng miền bắc trung nam tây nguyên hà nội hồ chí minh"
+    },
+    "tax_offices": {
+      "description": "Cơ quan thuế quản lý doanh nghiệp (Cục Thuế, Chi cục Thuế)",
+      "keywords": "cục thuế chi cục thuế cơ quan thuế quản lý"
+    },
+    "industries": {
+      "description": "Ngành kinh tế cấp 1 (VSIC)",
+      "keywords": "ngành nghề lĩnh vực kinh doanh"
+    }
+  },
+  "concepts": {
+    "doanh thu": ["invoices"],
+    "hóa đơn": ["invoices"],
+    "tiền thuế": ["invoices"],
+    "thuế suất": ["invoice_items", "invoices"],
+    "mặt hàng": ["invoice_items", "invoices"],
+    "nhóm hàng": ["invoice_items", "invoices"],
+    "dòng hàng": ["invoice_items", "invoices"],
+    "người mua": ["invoices", "buyers"],
+    "cơ quan thuế": ["tax_messages"],
+    "mã lỗi": ["tax_messages", "tax_error_codes"],
+    "từ chối": ["tax_messages", "tax_error_codes", "invoices"],
+    "api": ["api_requests"],
+    "độ trễ": ["api_requests"],
+    "gói": ["subscriptions", "service_plans"],
+    "chứng thư": ["certificates"],
+    "chữ ký số": ["certificates"],
+    "tỉnh": ["provinces", "sellers"],
+    "vùng": ["provinces", "sellers"],
+    "miền": ["provinces", "sellers"],
+    "ngành": ["industries", "sellers"],
+    "doanh nghiệp": ["sellers"],
+    "mst": ["sellers"],
+    "mã số thuế": ["sellers"]
+  },
+  "relations": {
+    "sellers.industry_code": "industries.industry_code",
+    "sellers.province_code": "provinces.province_code",
+    "sellers.tax_office_code": "tax_offices.tax_office_code",
+    "tax_offices.province_code": "provinces.province_code",
+    "buyers.province_code": "provinces.province_code",
+    "subscriptions.seller_id": "sellers.seller_id",
+    "subscriptions.plan_id": "service_plans.plan_id",
+    "certificates.seller_id": "sellers.seller_id",
+    "invoice_series.seller_id": "sellers.seller_id",
+    "invoices.seller_id": "sellers.seller_id",
+    "invoices.series_id": "invoice_series.series_id",
+    "invoices.buyer_id": "buyers.buyer_id",
+    "invoices.related_invoice_id": "invoices.invoice_id",
+    "invoice_items.invoice_id": "invoices.invoice_id",
+    "tax_messages.invoice_id": "invoices.invoice_id",
+    "tax_messages.seller_id": "sellers.seller_id",
+    "tax_messages.error_code": "tax_error_codes.error_code",
+    "api_requests.seller_id": "sellers.seller_id",
+    "daily_seller_stats.seller_id": "sellers.seller_id"
+  },
+  "requires": {
+    "invoice_items": ["invoices"]
+  },
+  "no_sample_columns": [
+    ["sellers", "contact_email"], ["sellers", "contact_phone"], ["sellers", "tax_code"],
+    ["buyers", "email"], ["buyers", "phone"], ["buyers", "name"], ["buyers", "tax_code"],
+    ["invoices", "cqt_code"], ["certificates", "serial"]
+  ],
+  "policies": {
+    "admin": {},
+    "analyst": {
+      "denied_columns": [["sellers", "contact_email"], ["sellers", "contact_phone"], ["buyers", "email"], ["buyers", "phone"]],
+      "mask_pii": true
+    },
+    "sales": {
+      "allowed_tables": ["sellers", "subscriptions", "service_plans", "certificates", "provinces", "industries",
+                         "tax_offices", "daily_seller_stats"]
+    }
+  },
+  "example_questions": [
+    "Doanh thu theo từng tháng năm 2025",
+    "Top 10 doanh nghiệp có nhiều hóa đơn hợp lệ nhất quý 1/2025",
+    "Mười mã lỗi bị cơ quan thuế từ chối nhiều nhất năm 2024",
+    "p95 độ trễ API ký hóa đơn trong tháng 5/2025",
+    "Bao nhiêu doanh nghiệp có chứng thư số hết hạn trong 30 ngày tới?",
+    "Xóa các hóa đơn nháp"
+  ]
+}

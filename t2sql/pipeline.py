@@ -4,9 +4,9 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 
-from . import DEFAULT_DOCS, ROOT, TODAY, prompts
+from . import ROOT, TODAY, datasets, prompts
 from .db import Backend, ExecResult, make_backend
-from .checks import check_result, describe
+from .checks import Issue, check_result, describe
 from .dialect import example_sql
 from .evaluation import results_match
 from .llm import BaseLLM, LLMError
@@ -34,6 +34,14 @@ class Config:
     n_candidates: int = 1           # self-consistency: số chuỗi sinh SQL (1 = tắt)
     sample_temperature: float = 0.7  # temperature cho các chuỗi lấy mẫu (chuỗi đầu luôn dùng mặc định)
     early_stop: bool = True         # 2 chuỗi đầu cùng kết quả thì bỏ các chuỗi còn lại
+    lookup_tables: bool = False     # đưa toàn bộ dòng của bảng danh mục nhỏ vào prompt + liên kết theo giá trị
+    lookup_max_rows: int = 100
+    lookup_max_chars: int = 4000    # bỏ qua bảng danh mục có nội dung dài hơn
+    error_hints: bool = False       # gửi kèm gợi ý sửa theo mã lỗi của DB khi SQL lỗi
+    cost_guard: bool = False        # EXPLAIN ESTIMATE trước khi chạy; đọc quá ngưỡng -> đề nghị model viết gọn hơn
+    cost_guard_rows: int = 40_000_000   # ghi đè bằng T2SQL_MAX_ESTIMATED_ROWS
+    semantic_check: bool = False    # thêm một lời gọi model soát lỗi logic của SQL + kết quả
+    reasoning_hard: str | None = None   # bật reasoning (low/medium/high) cho câu hỏi có vẻ phức tạp
 
 
 CONFIGS = {
@@ -48,6 +56,16 @@ CONFIGS = {
                           n_candidates=3),
     "robust": Config("robust", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                      shape_check=True, n_candidates=3),
+    # Cải tiến cho ClickHouse / database lớn (cộng dồn lên shapecheck)
+    "lookup": Config("lookup", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                     lookup_tables=True, error_hints=True),
+    "costguard": Config("costguard", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                        lookup_tables=True, error_hints=True, cost_guard=True),
+    "verify": Config("verify", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                     lookup_tables=True, error_hints=True, cost_guard=True, semantic_check=True),
+    "reasoning": Config("reasoning", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                        lookup_tables=True, error_hints=True, cost_guard=True, semantic_check=True,
+                        reasoning_hard="medium"),
     "production": Config("production", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                          shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
                          guard_write_intent=True),
@@ -65,6 +83,8 @@ class Attempt:
     llm_ms: float = 0.0             # thời gian model sinh câu trả lời
     db_ms: float = 0.0              # thời gian chạy SQL (kể cả kiểm tra an toàn)
     issues: list[str] = field(default_factory=list)   # quy tắc hình dạng bị vi phạm (R1..R7)
+    estimated_rows: int | None = None   # cost_guard: số dòng dự kiến đọc (khi vượt ngưỡng, SQL không được chạy)
+    verdict: str | None = None      # semantic_check: lý do người soát cho là sai (None = OK / không soát)
 
 
 @dataclass
@@ -77,6 +97,23 @@ class Chain:
     message: str | None = None
     attempts: list[Attempt] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+
+
+_HARD_CUES = [
+    ("so với", "cùng kỳ", "tăng", "giảm", "chênh"),                          # so sánh giữa hai kỳ / nhóm
+    ("tỷ lệ", "tỷ trọng", "phần trăm", "%"),                                   # tỷ lệ
+    ("nếu ", "giả sử", "không có chính sách"),                                 # giả định
+    ("lần đầu", "đầu tiên", "mua thêm", "trở lên", "trong vòng", "đến khi", "từ lúc", "cách ngày"),  # chuỗi sự kiện
+    ("ở mỗi", "mỗi vùng", "mỗi nơi", "mỗi ngành", "mỗi tỉnh", "từng vùng"),   # xếp hạng trong nhóm
+]
+
+
+def looks_hard(question: str, n_tables: int) -> bool:
+    """Heuristic chọn câu hỏi nên bật reasoning: có ít nhất một dấu hiệu phức tạp (so sánh kỳ, tỷ lệ, giả định,
+    chuỗi sự kiện, xếp hạng trong nhóm). Số bảng sau schema linking không phân biệt được câu khó nên không dùng.
+    Trên bộ dev: bắt 13/20 câu khó, 3/22 câu trung bình, 0/16 câu dễ."""
+    q = (question or "").lower()
+    return any(any(c in q for c in group) for group in _HARD_CUES)
 
 
 def _usable(c: Chain) -> bool:
@@ -109,6 +146,7 @@ class Answer:
     started_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
     agreement: str | None = None     # self-consistency: "3/3" = mọi chuỗi cho cùng kết quả
     candidates: list[dict] = field(default_factory=list)
+    reasoning: str | None = None     # mức reasoning đã dùng cho câu này (reasoning_hard)
 
     def to_log(self) -> dict:
         r = self.result
@@ -118,16 +156,17 @@ class Answer:
             "ok": bool(r and r.ok), "rows": len(r.rows) if r and r.ok else None,
             "error": r.error if r and not r.ok else None, "latency_ms": self.latency_ms,
             "attempts": [asdict(a) for a in self.attempts], "tables_in_prompt": self.tables_in_prompt,
-            "agreement": self.agreement, "candidates": self.candidates,
+            "agreement": self.agreement, "candidates": self.candidates, "reasoning": self.reasoning,
         }
 
 
 class TextToSQL:
     def __init__(self, llm: BaseLLM, config: Config | str = "baseline", db: Backend | str | None = None,
-                 docs_path: str = DEFAULT_DOCS, fewshot_path: str | None = None,
+                 docs_path: str | None = None, fewshot_path: str | None = None,
                  max_rows: int = 200, timeout_s: float | None = None, logger=None):
         """db: một Backend, một URL (postgresql://... / sqlite:///...), đường dẫn file SQLite,
-        hoặc None để lấy từ T2SQL_DATABASE_URL (trống = SQLite data/shop.db)."""
+        hoặc None để lấy từ T2SQL_DATABASE_URL (trống = SQLite data/shop.db).
+        docs_path=None: dùng bộ dữ liệu theo tên database (datasets/<tên>/, không có thì bộ shop mặc định)."""
         self.llm = llm
         self.config = CONFIGS[config] if isinstance(config, str) else config
         if isinstance(db, Backend):
@@ -137,21 +176,47 @@ class TextToSQL:
             self.backend = make_backend(url, max_rows=max_rows, timeout_s=timeout_s)
         self.executor = self.backend   # tên cũ
         self.dialect = self.backend.dialect
-        self.schema = self.backend.load_schema(docs_path)
+        self.dataset = datasets.for_backend(self.backend) if docs_path is None else datasets.from_docs(docs_path)
+        self.policies = self.dataset.policies
+        self.schema = self.backend.load_schema(self.dataset.docs_path)
+        self.schema.requires = {t: set(r) for t, r in self.dataset.docs.get("requires", {}).items()}
         self.retriever = None
         if self.config.use_fewshot:
-            path = fewshot_path or os.path.join(ROOT, "eval", "fewshot_pool.json")
+            path = fewshot_path or self.dataset.fewshot_path or os.path.join(ROOT, "eval", "fewshot_pool.json")
             self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k)
-            # Ví dụ viết cho SQLite: chuyển sang dialect của DB đích (ưu tiên bản viết tay nếu có).
+            # Ví dụ viết cho dialect của bộ dữ liệu (shop: SQLite): chuyển sang DB đích (ưu tiên bản viết tay nếu có).
             for ex in self.retriever.examples:
-                ex["sql"] = example_sql(ex, self.dialect)
+                ex["sql"] = example_sql(ex, self.dialect, source=self.dataset.sql_dialect)
         self.linker = SchemaLinker(self.schema, top_k=self.config.linking_top_k) if self.config.use_linking else None
+        self.lookups = self._load_lookups() if self.config.lookup_tables else {}
+        self.cost_limit = int(os.environ.get("T2SQL_MAX_ESTIMATED_ROWS") or self.config.cost_guard_rows)
         self.logger = logger
+
+    def _load_lookups(self) -> dict:
+        """Bảng danh mục nhỏ (ít dòng): {bảng: (cột, dòng, tập giá trị chữ viết thường để liên kết theo giá trị)}."""
+        from .schema import NO_SAMPLE_COLUMNS
+        cfg, out = self.config, {}
+        no_sample = NO_SAMPLE_COLUMNS | {tuple(c) for c in self.dataset.docs.get("no_sample_columns", [])}
+        for name, t in self.schema.tables.items():
+            if not 0 < t.row_count <= cfg.lookup_max_rows:
+                continue
+            cols = [c.name for c in t.columns
+                    if (name, c.name) not in no_sample and not c.type.startswith("AggregateFunction")]
+            res = self.backend.run("SELECT " + ", ".join(cols) + f" FROM {name}", safe=False)
+            if not res.ok or not res.rows:
+                continue
+            text = prompts.lookup_text({name: (res.columns, res.rows)})
+            if len(text) > cfg.lookup_max_chars:
+                continue
+            values = {str(v).lower() for r in res.rows for v in r
+                      if isinstance(v, str) and len(v) >= 3 and not v.isdigit()}
+            out[name] = (res.columns, res.rows, values)
+        return out
 
     # ------------------------------------------------------------------
     def ask(self, question: str, history: list[dict] | None = None, policy: Policy | str | None = None,
             exclude_example: str | None = None) -> Answer:
-        policy = POLICIES[policy] if isinstance(policy, str) else (policy or POLICIES["admin"])
+        policy = self.policies[policy] if isinstance(policy, str) else (policy or self.policies["admin"])
         t0 = time.perf_counter()
         ans = Answer(question=question, kind="error")
         try:
@@ -190,31 +255,46 @@ class TextToSQL:
         if self.linker:
             use_hint = examples and cfg.linking_fewshot_hint
             hint = set().union(*(tables_in_sql(e["sql"]) for e in examples)) if use_hint else set()
-            linked = self.linker.link(q, hint)
+            linked = set(self.linker.link(q, hint))
+            if self.lookups:   # liên kết theo giá trị: câu hỏi nhắc "Đà Nẵng", "Xây dựng"... -> kèm bảng danh mục đó
+                ql = q.lower()
+                linked |= {t for t, (_, _, vals) in self.lookups.items() if any(v in ql for v in vals)}
             schema = schema.subset([t for t in linked if t in schema.tables])
         ans.tables_in_prompt = list(schema.tables)
 
-        system = prompts.sql_system(schema.render(with_docs=cfg.use_docs), cfg.allow_clarify, self.dialect)
+        schema_text = schema.render(with_docs=cfg.use_docs)
+        shown = {t: self.lookups[t] for t in schema.tables if t in self.lookups}
+        if shown:
+            parts = {}
+            for t, (cols, rows, _) in shown.items():
+                keep = [i for i, c in enumerate(cols) if c in schema.tables[t].column_names()]
+                parts[t] = ([cols[i] for i in keep], [tuple(r[i] for i in keep) for r in rows])
+            schema_text += "\n\n" + prompts.lookup_text(parts)
+        system = prompts.sql_system(schema_text, cfg.allow_clarify, self.dialect)
+        reasoning = cfg.reasoning_hard if cfg.reasoning_hard and looks_hard(q, len(schema.tables)) else None
+        ans.reasoning = reasoning
         messages = [{"role": "user", "content": prompts.user_message(q, examples)}]
 
         if cfg.n_candidates <= 1:
-            chain = self._chain(system, messages, policy, q, temperature=None)
+            chain = self._chain(system, messages, policy, q, temperature=None, reasoning=reasoning)
         else:
-            chain = self._self_consistency(system, messages, policy, q, ans)
+            chain = self._self_consistency(system, messages, policy, q, ans, reasoning=reasoning)
         ans.kind, ans.sql, ans.result, ans.attempts = chain.kind, chain.sql, chain.result, chain.attempts
         if chain.kind in ("cannot", "clarify"):
             ans.message = chain.message
 
     # ------------------------------------------------------------------ một chuỗi: sinh -> chạy -> tự sửa
-    def _chain(self, system, base_messages, policy, question, temperature=None) -> "Chain":
-        """Sinh SQL, chạy, và tự sửa khi SQL lỗi / rỗng / kết quả có hình dạng đáng ngờ (tối đa max_retries lần)."""
+    def _chain(self, system, base_messages, policy, question, temperature=None, reasoning=None) -> "Chain":
+        """Sinh SQL, chạy, và tự sửa khi SQL lỗi / rỗng / kết quả có hình dạng đáng ngờ (tối đa max_retries lần).
+        Tùy Config: chặn truy vấn đọc quá nhiều (cost_guard), soát lỗi logic bằng một lời gọi model (semantic_check)."""
         cfg = self.config
         messages = list(base_messages)
         chain = Chain(temperature=temperature)
         last_sql = None
+        guarded = verified = False
         for attempt_no in range(cfg.max_retries + 1):
             t_llm = time.perf_counter()
-            raw = self.llm.complete(system, messages, max_tokens=16000, temperature=temperature)
+            raw = self.llm.complete(system, messages, max_tokens=16000, temperature=temperature, reasoning=reasoning)
             kind, payload = parse_response(raw)
             att = Attempt(raw=raw, kind=kind, sql=payload if kind == "sql" else None,
                           llm_ms=round((time.perf_counter() - t_llm) * 1000, 1))
@@ -222,6 +302,19 @@ class TextToSQL:
             if kind in ("cannot", "clarify"):
                 chain.kind, chain.message, chain.sql, chain.result = kind, payload, None, None
                 return chain
+            repeated = payload == last_sql   # model giữ nguyên SQL sau phản hồi: chấp nhận, không ép sửa tiếp
+            can_retry = attempt_no < cfg.max_retries
+            if cfg.cost_guard and not guarded and not repeated and can_retry:
+                est = self.backend.estimate_rows(payload, policy)
+                if est and est[0] > self.cost_limit:
+                    guarded = True
+                    att.estimated_rows = est[0]
+                    detail = ", ".join(f"{t}: {n:,}" for t, n in sorted(est[1].items(), key=lambda x: -x[1]))
+                    last_sql = payload
+                    messages.append({"role": "assistant", "content": raw})
+                    messages.append({"role": "user",
+                                     "content": prompts.FIX_COST.format(rows=f"{est[0]:,}", detail=detail)})
+                    continue
             res = self.executor.run(payload, policy=policy)
             att.db_ms = res.elapsed_ms
             chain.kind, chain.sql, chain.result = "result", payload, res
@@ -230,15 +323,32 @@ class TextToSQL:
                                   "forbidden_keyword", "forbidden_function", "timeout", "db_unavailable"):
                 return chain  # vi phạm an toàn / quá tải: không cho model "thử lại cho qua"
             issues = check_result(question, res.columns, res.rows) if (cfg.shape_check and res.ok) else []
+            if cfg.shape_check and res.ok and not tables_in_sql(payload):
+                # ClickHouse chạy được "SELECT count()" không có FROM (đọc system.one) và trả 1: sai mà không báo lỗi
+                issues.insert(0, Issue("R0", "Câu SQL không đọc từ bảng nào (thiếu FROM), nên kết quả không lấy từ dữ liệu."))
             att.issues = [i.rule for i in issues]
             chain.issues = att.issues
-            repeated = payload == last_sql   # model giữ nguyên SQL sau phản hồi: chấp nhận, không ép sửa tiếp
             if not res.ok:
-                fix = prompts.fix_error(res.error, self.dialect)
+                hint = f"\nGợi ý: {res.hint}" if cfg.error_hints and res.hint else ""
+                fix = prompts.fix_error(res.error + hint, self.dialect)
             elif res.empty and cfg.retry_on_empty and not repeated:
                 fix = prompts.FIX_EMPTY
             elif issues and not repeated:
                 fix = prompts.FIX_SHAPE.format(issues=describe(issues))
+            elif cfg.semantic_check and not verified and not repeated and can_retry:
+                verified = True
+                try:
+                    reason = prompts.parse_verdict(self.llm.complete(
+                        prompts.VERIFY_SYSTEM,
+                        prompts.verify_messages(question, payload, res.columns, res.rows, len(res.rows),
+                                                self.schema.business_rules),
+                        max_tokens=2000, temperature=0))
+                except LLMError:
+                    return chain    # bước soát chỉ là phụ: lỗi mạng / quá tải thì giữ kết quả đã chạy tốt
+                if not reason:
+                    return chain
+                att.verdict = reason
+                fix = prompts.FIX_SEMANTIC.format(reason=reason)
             else:
                 return chain
             if attempt_no == cfg.max_retries:
@@ -249,14 +359,14 @@ class TextToSQL:
         return chain
 
     # ------------------------------------------------------------------ self-consistency
-    def _self_consistency(self, system, messages, policy, question, ans) -> "Chain":
+    def _self_consistency(self, system, messages, policy, question, ans, reasoning=None) -> "Chain":
         """Chạy nhiều chuỗi (1 chuỗi temperature 0 + các chuỗi lấy mẫu), gom theo KẾT QUẢ thực thi và chọn nhóm
         đông nhất. Chuỗi lỗi bị loại; chuỗi có nghi vấn hình dạng chỉ được tính khi không còn chuỗi sạch.
         early_stop: chạy 2 chuỗi trước, nếu cùng kết quả thì bỏ chuỗi thứ 3."""
         from concurrent.futures import ThreadPoolExecutor
         cfg = self.config
         temps = [None] + [cfg.sample_temperature] * (cfg.n_candidates - 1)
-        run = lambda t: self._chain(system, messages, policy, question, temperature=t)
+        run = lambda t: self._chain(system, messages, policy, question, temperature=t, reasoning=reasoning)
         first = min(2, len(temps)) if cfg.early_stop else len(temps)
         with ThreadPoolExecutor(max_workers=len(temps)) as pool:
             chains = list(pool.map(run, temps[:first]))

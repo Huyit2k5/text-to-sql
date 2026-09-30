@@ -12,7 +12,8 @@ RUN pip install -r requirements.txt
 COPY t2sql ./t2sql
 COPY data ./data
 COPY eval ./eval
-COPY app.py cli.py evaluate.py ./
+COPY datasets ./datasets
+COPY app.py cli.py evaluate.py profile_clickhouse.py profile_queries.py ./
 
 RUN useradd --create-home --uid 1000 app && mkdir -p logs results && chown -R app:app /app
 USER app

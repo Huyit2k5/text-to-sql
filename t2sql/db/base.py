@@ -14,6 +14,7 @@ class ExecResult:
     error_code: str | None = None   # sql_error | timeout | forbidden | blocked | db_unavailable | ...
     elapsed_ms: float = 0.0
     tables: set[str] = field(default_factory=set)
+    hint: str | None = None         # gợi ý sửa theo mã lỗi của DB (chỉ dùng khi bật Config.error_hints)
 
     @property
     def empty(self):
@@ -36,6 +37,7 @@ def normalize_value(v):
 class Backend:
     dialect = "sqlite"            # tên dialect theo sqlglot
     display_name = "SQLite"
+    database_name = None          # tên database, dùng để chọn bộ dữ liệu datasets/<tên>/
 
     def __init__(self, max_rows: int = 200, timeout_s: float = 5.0):
         self.max_rows = max_rows
@@ -46,6 +48,10 @@ class Backend:
 
     def load_schema(self, docs_path: str | None = None):
         raise NotImplementedError
+
+    def estimate_rows(self, sql: str, policy=None) -> tuple[int, dict] | None:
+        """Số dòng dự kiến đọc (tổng, theo bảng) mà không chạy truy vấn. None = backend không hỗ trợ."""
+        return None
 
     def describe(self) -> str:
         return self.display_name

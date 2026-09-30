@@ -1,0 +1,181 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "baseline": {
+      "n": 62,
+      "ex": 0.3620689655172414,
+      "ex_lenient": 0.3793103448275862,
+      "by_difficulty": {
+        "easy": 0.5625,
+        "medium": 0.4090909090909091,
+        "hard": 0.15,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 5,
+      "retried": 0,
+      "errors": {
+        "wrong_filter": 12,
+        "wrong_columns": 1,
+        "execution_error": 5,
+        "date_function": 7,
+        "other": 3,
+        "business_logic": 5,
+        "wrong_table": 1,
+        "wrong_refusal": 2,
+        "wrong_join": 1
+      },
+      "avg_latency_ms": 4174.341935483872,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 128728,
+        "output_tokens": 4795,
+        "seconds": 228.37383390020113
+      }
+    },
+    "docs": {
+      "n": 62,
+      "ex": 0.7586206896551724,
+      "ex_lenient": 0.7931034482758621,
+      "by_difficulty": {
+        "easy": 0.9375,
+        "medium": 0.8636363636363636,
+        "hard": 0.5,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 2,
+      "retried": 0,
+      "errors": {
+        "wrong_columns": 2,
+        "wrong_filter": 5,
+        "execution_error": 2,
+        "wrong_table": 2,
+        "date_function": 2,
+        "business_logic": 1
+      },
+      "avg_latency_ms": 5416.206451612903,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 484112,
+        "output_tokens": 5578,
+        "seconds": 306.22111650020815
+      }
+    },
+    "fewshot": {
+      "n": 62,
+      "ex": 0.8620689655172413,
+      "ex_lenient": 0.8793103448275862,
+      "by_difficulty": {
+        "easy": 0.9375,
+        "medium": 1.0,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 0,
+      "errors": {
+        "wrong_columns": 1,
+        "wrong_table": 3,
+        "wrong_filter": 1,
+        "execution_error": 1,
+        "business_logic": 1,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 5042.877419354839,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 508136,
+        "output_tokens": 4348,
+        "seconds": 277.0892450006213
+      }
+    },
+    "linking": {
+      "n": 62,
+      "ex": 0.8793103448275862,
+      "ex_lenient": 0.896551724137931,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 0,
+      "errors": {
+        "wrong_table": 3,
+        "execution_error": 1,
+        "business_logic": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 5743.832258064515,
+      "usage": {
+        "calls": 62,
+        "input_tokens": 288768,
+        "output_tokens": 4328,
+        "seconds": 323.91521859995555
+      }
+    },
+    "selfcorrect": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.896551724137931,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 2,
+        "execution_error": 1,
+        "business_logic": 2,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 11164.362903225807,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 311211,
+        "output_tokens": 4794,
+        "seconds": 661.6296599002089
+      }
+    },
+    "shapecheck": {
+      "n": 62,
+      "ex": 0.8620689655172413,
+      "ex_lenient": 0.8793103448275862,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.9545454545454546,
+        "hard": 0.65,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 4,
+        "execution_error": 1,
+        "business_logic": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 8492.564516129032,
+      "usage": {
+        "calls": 67,
+        "input_tokens": 315953,
+        "output_tokens": 4764,
+        "seconds": 502.2007568005938
+      }
+    }
+  }
+}

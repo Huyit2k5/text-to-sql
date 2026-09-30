@@ -13,9 +13,10 @@ import unittest
 def _dotenv(key):
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     if os.path.exists(path):
-        for line in open(path, encoding="utf-8-sig"):
-            if line.strip().startswith(key + "="):
-                return line.split("=", 1)[1].strip()
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                if line.strip().startswith(key + "="):
+                    return line.split("=", 1)[1].strip()
     return ""
 
 
@@ -607,6 +608,124 @@ class TestShapeCheckPipeline(unittest.TestCase):
         ans = TextToSQL(scripted([H06_BAD]), "selfcorrect").ask(H06_Q)
         self.assertEqual(len(ans.attempts), 1)
 
+    def test_sql_without_table_is_sent_back(self):
+        """R0: "SELECT count()" không có FROM vẫn chạy (ClickHouse trả 1) nhưng không lấy từ dữ liệu."""
+        llm = scripted(["SELECT 1 AS trung_binh", "SELECT AVG(quantity) FROM order_items"])
+        ans = TextToSQL(llm, "shapecheck").ask("Trung bình mỗi dòng hàng mua bao nhiêu sản phẩm?")
+        self.assertEqual(ans.attempts[0].issues, ["R0"])
+        self.assertIn("FROM", llm.calls[1][1][-1]["content"])
+        self.assertEqual(ans.sql, "SELECT AVG(quantity) FROM order_items")
+
+
+class TestImprovements(unittest.TestCase):
+    """Danh mục, chặn truy vấn nặng, tự soát logic, reasoning cho câu khó (cấu hình lookup / costguard / verify / reasoning)."""
+
+    def cfg(self, **kw):
+        base = dict(use_docs=True, use_linking=True, max_retries=3, shape_check=True)
+        base.update(kw)
+        return Config("test", **base)
+
+    def test_lookup_tables_and_value_linking(self):
+        llm = scripted(["SELECT COUNT(*) FROM products p JOIN suppliers s ON s.supplier_id = p.supplier_id WHERE s.name = 'Samsung Vina'"])
+        pipe = TextToSQL(llm, self.cfg(lookup_tables=True))
+        self.assertIn("suppliers", pipe.lookups)
+        ans = pipe.ask("Samsung Vina cung cấp bao nhiêu mặt hàng?")
+        self.assertIn("suppliers", ans.tables_in_prompt)
+        system = llm.calls[0][0]
+        self.assertIn("DANH MỤC ĐẦY ĐỦ", system)
+        self.assertIn("Samsung Vina", system)
+        self.assertNotIn("DANH MỤC ĐẦY ĐỦ", TextToSQL(scripted(["SELECT 1"]), self.cfg()).schema.render(True))
+
+    def test_cost_guard_asks_for_cheaper_sql_before_running(self):
+        from unittest import mock
+        heavy, light = "SELECT SUM(quantity) FROM order_items", "SELECT SUM(quantity) FROM order_items WHERE order_id < 10"
+        llm = scripted([heavy, light])
+        pipe = TextToSQL(llm, self.cfg(cost_guard=True, cost_guard_rows=1000))
+        est = lambda sql, policy=None: (5000, {"order_items": 5000}) if sql == heavy else (10, {"order_items": 10})
+        with mock.patch.object(pipe.backend, "estimate_rows", side_effect=est), \
+                mock.patch.object(pipe.backend, "run", wraps=pipe.backend.run) as run:
+            ans = pipe.ask("Tổng số lượng bán ra của vài đơn đầu")
+        self.assertEqual([a.estimated_rows for a in ans.attempts], [5000, None])
+        self.assertEqual([c.args[0] for c in run.call_args_list], [light])   # SQL nặng không được chạy
+        self.assertIn("dự kiến đọc khoảng 5,000 dòng", llm.calls[1][1][-1]["content"])
+
+    def test_cost_guard_accepts_repeated_sql(self):
+        from unittest import mock
+        heavy = "SELECT SUM(quantity) FROM order_items"
+        pipe = TextToSQL(scripted([heavy, heavy]), self.cfg(cost_guard=True, cost_guard_rows=1000))
+        with mock.patch.object(pipe.backend, "estimate_rows", return_value=(5000, {"order_items": 5000})):
+            ans = pipe.ask("Tổng số lượng bán ra")
+        self.assertTrue(ans.result.ok)
+        self.assertEqual(len(ans.attempts), 2)
+
+    def test_semantic_check_sends_reason_back(self):
+        bad = "SELECT customer_id, SUM(shipping_fee) FROM orders GROUP BY customer_id ORDER BY 2 DESC LIMIT 1"
+        good = "SELECT order_id, shipping_fee FROM orders ORDER BY shipping_fee DESC LIMIT 1"
+        llm = scripted([bad, "SAI: câu hỏi cần một đơn, không phải tổng theo khách", good])
+        ans = TextToSQL(llm, self.cfg(semantic_check=True)).ask("Đơn hàng có phí vận chuyển cao nhất?")
+        self.assertEqual(ans.sql, good)
+        self.assertEqual(ans.attempts[0].verdict, "câu hỏi cần một đơn, không phải tổng theo khách")
+        self.assertIn("QUY TẮC NGHIỆP VỤ", llm.calls[1][1][0]["content"])      # lời gọi soát lỗi
+        self.assertIn("không phải tổng theo khách", llm.calls[2][1][-1]["content"])
+        self.assertEqual(len(llm.calls), 3)          # chỉ soát một lần mỗi chuỗi
+
+    def test_semantic_check_ok_keeps_sql(self):
+        sql = "SELECT COUNT(*) FROM customers"
+        llm = scripted([sql, "OK"])
+        ans = TextToSQL(llm, self.cfg(semantic_check=True)).ask("Có bao nhiêu khách hàng?")
+        self.assertEqual((ans.sql, len(llm.calls), ans.attempts[0].verdict), (sql, 2, None))
+
+    def test_reasoning_only_for_hard_questions(self):
+        from t2sql.pipeline import looks_hard
+        self.assertTrue(looks_hard("Doanh thu tháng 6 tăng bao nhiêu phần trăm so với tháng 5?", 2))
+        self.assertFalse(looks_hard("Có bao nhiêu khách hàng ở Hà Nội?", 5))
+        llm = scripted(["SELECT COUNT(*) FROM customers", "SELECT 100.0 * SUM(status = 3) / COUNT(*) FROM orders"])
+        pipe = TextToSQL(llm, self.cfg(reasoning_hard="medium"))
+        self.assertIsNone(pipe.ask("Có bao nhiêu khách hàng?").reasoning)
+        self.assertEqual(pipe.ask("Tỷ lệ đơn bị hủy là bao nhiêu phần trăm?").reasoning, "medium")
+        self.assertEqual(llm.reasoning_levels, [None, "medium"])
+
+
+class TestReviewFixes(unittest.TestCase):
+    """Hồi quy cho các lỗi tìm thấy khi review."""
+
+    def test_tables_in_sql_handles_quotes_and_schema_prefix(self):
+        self.assertEqual(tables_in_sql('SELECT 1 FROM "orders"'), {"orders"})
+        self.assertEqual(tables_in_sql("SELECT 1 FROM `invoices` FINAL"), {"invoices"})
+        self.assertEqual(tables_in_sql('SELECT 1 FROM shop.orders o JOIN "shop"."customers" c ON 1'), {"orders", "customers"})
+        self.assertEqual(tables_in_sql("SELECT 1"), set())
+
+    def test_quoted_table_is_not_flagged_as_missing_from(self):
+        ans = TextToSQL(scripted(['SELECT COUNT(*) FROM "customers"']), "shapecheck").ask("Có bao nhiêu khách hàng?")
+        self.assertEqual(ans.attempts[0].issues, [])
+        self.assertEqual(len(ans.attempts), 1)
+
+    def test_verifier_failure_keeps_good_result(self):
+        from t2sql.llm import LLMError
+        outs = iter(["SELECT COUNT(*) FROM customers"])
+
+        def fn(system, messages):
+            if system.startswith("Bạn là người soát lỗi"):
+                raise LLMError("hết thời gian chờ")
+            return next(outs)
+        ans = TextToSQL(ScriptedLLM(fn), Config("t", use_docs=True, max_retries=2, semantic_check=True)).ask("Có bao nhiêu khách hàng?")
+        self.assertEqual(ans.kind, "result")
+        self.assertTrue(ans.result.ok)
+
+    def test_topn_with_each_word_but_ranking_column_still_checked(self):
+        from t2sql.checks import check_result
+        rows = [(f"sp{i}", 100 - i) for i in range(50)]
+        rules = [i.rule for i in check_result("Top 5 sản phẩm bán chạy nhất, doanh thu từng sản phẩm", ["name", "rev"], rows)]
+        self.assertEqual(rules, ["R4"])
+
+    def test_empty_allowed_tables_means_no_access(self):
+        from t2sql.datasets import Dataset
+        d = Dataset("x", "", None, None, docs={"policies": {"locked": {"allowed_tables": []}, "open": {}}})
+        self.assertEqual(d.policies["locked"].allowed_tables, set())
+        self.assertIsNone(d.policies["open"].allowed_tables)
+        res = TextToSQL(scripted(["SELECT 1 FROM orders"]), "docs").executor.run("SELECT COUNT(*) FROM orders", policy=d.policies["locked"])
+        self.assertEqual(res.error_code, "forbidden")
+
 
 class TestSelfConsistency(unittest.TestCase):
     def cfg(self, **kw):
@@ -622,7 +741,7 @@ class TestSelfConsistency(unittest.TestCase):
             return None
         llm = ScriptedLLM(fn)
 
-        def complete(system, messages, max_tokens=16000, temperature=None):
+        def complete(system, messages, max_tokens=16000, temperature=None, reasoning=None):
             seen.append(temperature)
             with llm._lock:
                 return greedy if temperature is None else next(it)
@@ -789,6 +908,273 @@ class TestPostgres(unittest.TestCase):
         user_msg = llm.calls[0][1][0]["content"]
         self.assertNotIn("strftime", user_msg)
         self.assertIn("TO_CHAR", user_msg)
+
+
+class TestClickHouseOffline(unittest.TestCase):
+    """Phần không cần server: kiểm tra AST, chuyển dialect, đọc lỗi."""
+
+    def test_ast_check_blocks_clickhouse_specific_risks(self):
+        from t2sql.db.clickhouse import ast_check
+        cases = {"SELECT * FROM url('http://x/a.csv', CSV)": "forbidden_function",
+                 "SELECT * FROM file('/etc/passwd', LineAsString)": "forbidden_function",
+                 "SELECT * FROM remote('h', shop, orders)": "forbidden_function",
+                 "SELECT count() FROM numbers(1000000000)": "forbidden_function",
+                 "SELECT sleepEachRow(1) FROM orders": "forbidden_function",
+                 "SELECT dictGet('d', 'a', 1)": "forbidden_function",
+                 "SELECT name FROM system.tables": "forbidden",
+                 "SELECT 1 FROM orders SETTINGS max_execution_time = 1000": "forbidden_keyword",
+                 "SELECT 1 FROM orders FORMAT JSON": "forbidden_keyword",
+                 "SELECT * FROM orders INTO OUTFILE 'x.csv'": "forbidden_keyword"}
+        for sql, code in cases.items():
+            with self.subTest(sql=sql):
+                with self.assertRaises(SafetyError) as cm:
+                    ast_check(sql, POLICIES["admin"])
+                self.assertEqual(cm.exception.code, code)
+        self.assertEqual(ast_check("SELECT toYear(order_date) y, count() FROM orders GROUP BY y ORDER BY y "
+                                   "LIMIT 3 BY y", POLICIES["sales"]), {"orders"})
+        with self.assertRaises(SafetyError):
+            ast_check("SELECT email FROM customers", POLICIES["analyst"])
+
+    def test_transpile_completes_group_by(self):
+        from t2sql.dialect import to_dialect
+        out = to_dialect("SELECT p.name, SUM(oi.quantity) FROM order_items oi JOIN products p "
+                         "ON p.product_id = oi.product_id GROUP BY p.product_id HAVING p.unit_price > 1", "clickhouse")
+        self.assertIn("GROUP BY p.product_id, p.name, p.unit_price", out)
+        out = to_dialect("SELECT strftime('%Y', order_date) AS y, COUNT(*) FROM orders GROUP BY y", "clickhouse")
+        self.assertIn("GROUP BY y", out)
+        self.assertNotIn("order_date HAVING", out)
+        self.assertIn("toYear(order_date) = 2024",
+                      to_dialect("SELECT COUNT(*) FROM orders WHERE strftime('%Y', order_date) = '2024'", "clickhouse"))
+
+    def test_error_message_is_cleaned(self):
+        from t2sql.db.clickhouse import _error_parts
+        e = Exception("HTTPDriver for http://127.0.0.1:8123 received ClickHouse error code 47\n Code: 47. "
+                      "DB::Exception: Unknown expression identifier `foo` in scope SELECT foo FROM orders. "
+                      "Maybe you meant: ['o']. (UNKNOWN_IDENTIFIER) (version 25.8.33.6 (official build))")
+        code, msg = _error_parts(e)
+        self.assertEqual(code, 47)
+        self.assertTrue(msg.startswith("Unknown expression identifier `foo`"))
+        self.assertNotIn("version", msg)
+
+    def test_topn_per_group_shape_check(self):
+        from t2sql.checks import check_result
+        q = "Top 3 sản phẩm có doanh thu cao nhất trong từng danh mục"
+        good = [(c, f"{c}{i}", 100 - i) for c in "ABCDE" for i in range(3)]
+        bad = [(f"{c}{i}", c, 100 - i) for c in "ABCDE" for i in range(5)]
+        self.assertEqual(check_result(q, ["cat", "name", "rev"], good), [])
+        self.assertEqual([i.rule for i in check_result(q, ["name", "cat", "rev"], bad)], ["R4"])
+
+
+def _ch_url():
+    return os.environ.get("T2SQL_TEST_CH_URL") or _dotenv("T2SQL_DATABASE_URL_CLICKHOUSE")
+
+
+def _ch_available():
+    url = _ch_url()
+    if not url:
+        return False
+    try:
+        from t2sql.db import make_backend
+        return make_backend(url).run("SELECT 1").ok
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_ch_available(), "không kết nối được ClickHouse (docker compose up -d clickhouse)")
+class TestClickHouse(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from t2sql.db import make_backend
+        cls.ch = make_backend(_ch_url(), max_rows=50, timeout_s=1)
+
+    def run_as(self, role, sql):
+        return self.ch.run(sql, policy=POLICIES[role])
+
+    def test_schema_introspection(self):
+        schema = self.ch.load_schema(DEFAULT_DOCS)
+        self.assertEqual(set(schema.tables),
+                         {"customers", "suppliers", "products", "orders", "order_items", "reviews"})
+        orders = {c.name: c for c in schema.tables["orders"].columns}
+        self.assertTrue(orders["order_id"].pk)
+        self.assertFalse(orders["order_date"].pk)            # nằm trong ORDER BY của MergeTree nhưng không phải khóa
+        self.assertEqual(orders["customer_id"].fk, "customers.customer_id")   # từ "relations" trong docs
+        self.assertEqual(orders["order_date"].type, "Date")
+        text = schema.render(with_docs=True)
+        self.assertIn("status = 4", text)
+        self.assertNotIn("@example.com", text)
+
+    def test_role_permissions(self):
+        self.assertTrue(self.run_as("analyst", "SELECT name, city FROM customers").ok)
+        for sql in ["SELECT email FROM customers", "SELECT * FROM customers"]:
+            with self.subTest(sql=sql):
+                self.assertEqual(self.run_as("analyst", sql).error_code, "forbidden")
+        self.assertEqual(self.run_as("sales", "SELECT count() FROM customers").error_code, "forbidden")
+        self.assertEqual(self.run_as("sales", "SELECT count() FROM orders").rows, [(1446,)])
+
+    def test_database_enforces_permissions_even_without_parser_check(self):
+        from unittest import mock
+        with mock.patch("t2sql.db.clickhouse.ast_check", return_value=set()):
+            res = self.run_as("analyst", "SELECT email FROM customers")
+            self.assertEqual(res.error_code, "forbidden")
+            self.assertIn("Not enough privileges", res.error)
+            self.assertEqual(self.run_as("sales", "SELECT count() FROM customers").error_code, "forbidden")
+            self.assertEqual(self.run_as("admin", "SELECT * FROM url('http://127.0.0.1:8123/ping', LineAsString)")
+                             .error_code, "forbidden")
+        for sql in ["INSERT INTO orders (order_id) VALUES (99999)", "ALTER TABLE orders DELETE WHERE 1",
+                    "DROP TABLE orders"]:
+            with self.subTest(sql=sql):
+                self.assertFalse(self.ch.run(sql, safe=False).ok)
+        self.assertEqual(self.run_as("admin", "SELECT count() FROM orders").rows[0][0], 1446)
+
+    def test_left_join_returns_null(self):
+        """join_use_nulls=1 (profile t2sql_ro): khách chưa có đơn phải ra NULL, không phải 0."""
+        res = self.run_as("admin", "SELECT count() FROM customers c LEFT JOIN orders o "
+                                   "ON o.customer_id = c.customer_id WHERE o.order_id IS NULL")
+        lite = Executor(DEFAULT_DB).run("SELECT COUNT(*) FROM customers c LEFT JOIN orders o "
+                                        "ON o.customer_id = c.customer_id WHERE o.order_id IS NULL")
+        self.assertEqual(res.rows, lite.rows)
+
+    def test_timeout_and_row_limit(self):
+        res = self.run_as("admin", "SELECT count() FROM order_items a, order_items b, order_items c")
+        self.assertEqual(res.error_code, "timeout")
+        res = self.run_as("admin", "SELECT * FROM order_items")
+        self.assertTrue(res.truncated)
+        self.assertEqual(len(res.rows), 50)
+
+    def test_gold_and_fewshot_match_sqlite(self):
+        from t2sql.db import make_backend
+        from t2sql.dialect import example_sql
+        lite = Executor(DEFAULT_DB, max_rows=10_000)
+        ch = make_backend(_ch_url(), max_rows=10_000, timeout_s=30)
+        with open(os.path.join(ROOT, "eval", "fewshot_pool.json"), encoding="utf-8") as f:
+            pool = json.load(f)
+        for it in [i for i in load_items() if i["sql"]] + pool:
+            with self.subTest(q=it["question"]):
+                ch_sql = example_sql(it, "clickhouse")
+                a, b = lite.run(it["sql"]), ch.run(ch_sql)
+                self.assertTrue(b.ok, f"{b.error}: {ch_sql}")
+                self.assertTrue(results_match(b.rows, a.rows, it.get("ordered", False)), ch_sql)
+
+    def test_pipeline_end_to_end_and_prompt(self):
+        llm = scripted(["SELECT toYear(order_date) AS nam, count() FROM orders GROUP BY nam"])
+        ans = TextToSQL(llm, "fewshot", db=_ch_url()).ask("Số đơn theo năm", policy="analyst")
+        self.assertTrue(ans.result.ok, ans.result.error)
+        self.assertEqual(sum(n for _, n in ans.result.rows), 1446)
+        system, user_msg = llm.calls[0][0], llm.calls[0][1][0]["content"]
+        self.assertIn("ClickHouse", system)
+        self.assertIn("LIMIT N BY", system)
+        self.assertNotIn(" email ", system)
+        self.assertNotIn("strftime", user_msg)
+
+
+class TestDatasets(unittest.TestCase):
+    """Bộ dữ liệu theo tên database: datasets/<tên>/ hoặc bộ shop mặc định."""
+
+    def test_default_and_einvoice(self):
+        from t2sql import datasets
+        shop = datasets.for_database("shop")
+        self.assertEqual((shop.name, shop.sql_dialect), ("shop", "sqlite"))
+        self.assertEqual(set(shop.policies), set(POLICIES))
+        self.assertEqual(datasets.for_database(None).name, "shop")
+        ev = datasets.for_database("einvoice")
+        self.assertEqual((ev.name, ev.sql_dialect), ("einvoice", "clickhouse"))
+        self.assertTrue(ev.eval_path.endswith("eval.json") and ev.fewshot_path.endswith("fewshot_pool.json"))
+        self.assertIn(("buyers", "email"), ev.policies["analyst"].denied_columns)
+        self.assertNotIn("invoices", ev.policies["sales"].allowed_tables)
+        self.assertIsNone(ev.policies["admin"].allowed_tables)
+
+    def test_example_sql_keeps_same_dialect(self):
+        from t2sql.dialect import example_sql
+        sql = "SELECT count() FROM invoices FINAL"
+        self.assertEqual(example_sql({"sql": sql}, "clickhouse", source="clickhouse"), sql)
+        with self.assertRaises(ValueError):
+            example_sql({"sql": sql}, "postgres", source="clickhouse")
+
+    def test_einvoice_files_are_consistent(self):
+        from t2sql import datasets
+        ev = datasets.for_database("einvoice")
+        with open(ev.eval_path, encoding="utf-8") as f:
+            items = json.load(f)
+        with open(ev.fewshot_path, encoding="utf-8") as f:
+            pool = json.load(f)
+        self.assertEqual(len({i["id"] for i in items}), len(items))
+        self.assertFalse({i["question"] for i in items} & {p["question"] for p in pool})
+        tables = set(ev.docs["tables"])
+        for rel in ev.docs["relations"].items():
+            for side in rel:
+                self.assertIn(side.split(".")[0], tables)
+
+
+def _einvoice_url():
+    url = os.environ.get("T2SQL_TEST_EINVOICE_URL") or _dotenv("T2SQL_DATABASE_URL_EINVOICE")
+    if not url:
+        return ""
+    try:
+        from t2sql.db import make_backend
+        return url if make_backend(url).run("SELECT count() FROM invoice_items").ok else ""
+    except Exception:
+        return ""
+
+
+EINVOICE_URL = _einvoice_url()
+
+
+@unittest.skipUnless(EINVOICE_URL, "chưa có database einvoice (python datasets/einvoice/generate.py)")
+class TestEInvoice(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from t2sql.db import make_backend
+        cls.ch = make_backend(EINVOICE_URL, max_rows=50, timeout_s=30)
+
+    def run_as(self, role, sql):
+        from t2sql import datasets
+        return self.ch.run(sql, policy=datasets.for_database("einvoice").policies[role])
+
+    def test_final_trap_exists(self):
+        """invoices giữ phiên bản cũ: không FINAL thì đếm nhiều hơn (bẫy cố ý của bộ dữ liệu)."""
+        raw = self.run_as("admin", "SELECT count() FROM invoices WHERE toYYYYMM(issued_at) = 202401").rows[0][0]
+        final = self.run_as("admin", "SELECT count() FROM invoices FINAL WHERE toYYYYMM(issued_at) = 202401").rows[0][0]
+        self.assertGreater(raw, final * 1.1)
+
+    def test_role_permissions_app_and_database(self):
+        from unittest import mock
+        self.assertEqual(self.run_as("analyst", "SELECT email FROM buyers").error_code, "forbidden")
+        self.assertTrue(self.run_as("analyst", "SELECT name FROM buyers LIMIT 1").ok)
+        self.assertEqual(self.run_as("sales", "SELECT count() FROM invoices").error_code, "forbidden")
+        self.assertTrue(self.run_as("sales", "SELECT sum(revenue_vnd) FROM daily_seller_stats WHERE day = toDate('2025-06-02')").ok)
+        with mock.patch("t2sql.db.clickhouse.ast_check", return_value=set()):
+            self.assertEqual(self.run_as("analyst", "SELECT phone FROM buyers").error_code, "forbidden")
+            self.assertEqual(self.run_as("sales", "SELECT count() FROM invoice_items").error_code, "forbidden")
+
+    def test_pipeline_uses_einvoice_dataset(self):
+        llm = scripted(["SELECT count() FROM invoices FINAL WHERE toYYYYMM(issued_at) = 202506"])
+        pipe = TextToSQL(llm, "fewshot", db=EINVOICE_URL)
+        self.assertEqual(pipe.dataset.name, "einvoice")
+        ans = pipe.ask("Số hóa đơn lập trong tháng 6/2025", policy="analyst")
+        self.assertTrue(ans.result.ok, ans.result.error)
+        system, user_msg = llm.calls[0][0], llm.calls[0][1][0]["content"]
+        self.assertIn("FINAL", system)
+        self.assertIn("toTimeZone", system)
+        self.assertNotIn("contact_email", system)          # cột analyst không được đọc bị ẩn khỏi prompt
+        self.assertIn("FROM invoices", user_msg)            # few-shot của bộ einvoice, không phải bộ shop
+        self.assertNotIn("order_items", user_msg)
+
+    @unittest.skipUnless(os.environ.get("T2SQL_TEST_SLOW"), "đặt T2SQL_TEST_SLOW=1 để chạy toàn bộ SQL chuẩn (~40s)")
+    def test_all_gold_and_fewshot_sql_run(self):
+        from t2sql import datasets
+        from t2sql.db import make_backend
+        ev = datasets.for_database("einvoice")
+        ch = make_backend(EINVOICE_URL, max_rows=100_000, timeout_s=60)
+        with open(ev.eval_path, encoding="utf-8") as f:
+            items = json.load(f)
+        with open(ev.fewshot_path, encoding="utf-8") as f:
+            items += json.load(f)
+        for it in items:
+            if it.get("sql"):
+                with self.subTest(q=it["question"]):
+                    res = ch.run(it["sql"], safe=False)
+                    self.assertTrue(res.ok, res.error)
+                    self.assertTrue(res.rows)
 
 
 if __name__ == "__main__":

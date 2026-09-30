@@ -108,5 +108,13 @@
       "order_items",
       "orders"
     ]
+  },
+  "relations": {
+    "products.supplier_id": "suppliers.supplier_id",
+    "orders.customer_id": "customers.customer_id",
+    "order_items.order_id": "orders.order_id",
+    "order_items.product_id": "products.product_id",
+    "reviews.product_id": "products.product_id",
+    "reviews.customer_id": "customers.customer_id"
   }
 }

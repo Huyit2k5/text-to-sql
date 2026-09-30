@@ -2,11 +2,11 @@
   "gold_false_positives": [],
   "stats": {
     "-": {
-      "đúng, không báo": 514,
+      "đúng, không báo": 512,
       "bỏ sót": 63
     },
     "TỔNG": {
-      "đúng, không báo": 514,
+      "đúng, không báo": 512,
       "bỏ sót": 63,
       "báo đúng": 14
     },

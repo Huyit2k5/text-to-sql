@@ -12,6 +12,7 @@ import time
 
 from ..safety import POLICIES, Policy, SafetyError, mask_value, static_check
 from .base import Backend, ExecResult, normalize_value
+from .guard import GuardRules, check_ast
 
 # Hàm nguy hiểm / không cần cho truy vấn phân tích.
 BLOCKED_FUNC_PREFIXES = ("pg_", "lo_", "dblink", "txid_")
@@ -20,50 +21,13 @@ BLOCKED_FUNCS = {"set_config", "current_setting", "query_to_xml", "query_to_xml_
 SYSTEM_SCHEMAS = {"pg_catalog", "information_schema", "pg_toast"}
 
 
+PG_RULES = GuardRules(BLOCKED_FUNC_PREFIXES, frozenset(BLOCKED_FUNCS), frozenset(SYSTEM_SCHEMAS), ("pg_",))
+
+
 def ast_check(sql: str, policy: Policy, dialect: str = "postgres") -> set[str]:
     """Kiểm tra bằng cây cú pháp. Trả về tập bảng được đọc; raise SafetyError nếu vi phạm.
     Nếu sqlglot không phân tích được câu lệnh thì bỏ qua (Postgres vẫn thực thi quyền ở lớp 3)."""
-    import sqlglot
-    from sqlglot import exp
-    try:
-        tree = sqlglot.parse_one(sql, read=dialect)
-    except Exception:
-        return set()
-    if not isinstance(tree, exp.Query):
-        raise SafetyError("Chỉ cho phép câu lệnh SELECT (chỉ đọc).", "not_select")
-    if tree.find(exp.Into):
-        raise SafetyError("Không được dùng SELECT ... INTO (tạo bảng mới).", "forbidden_keyword")
-    if tree.find(exp.Lock):
-        raise SafetyError("Không được khóa dòng (FOR UPDATE / FOR SHARE).", "forbidden_keyword")
-    for fn in tree.find_all(exp.Func):
-        name = (fn.sql_name() if not isinstance(fn, exp.Anonymous) else fn.name).lower()
-        if name.startswith(BLOCKED_FUNC_PREFIXES) or name in BLOCKED_FUNCS:
-            raise SafetyError(f"Không được gọi hàm hệ thống {name}().", "forbidden_function")
-
-    ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
-    tables = set()
-    for t in tree.find_all(exp.Table):
-        name, schema = t.name.lower(), (t.db or "").lower()
-        if not name or (name in ctes and not schema):
-            continue
-        if schema in SYSTEM_SCHEMAS or name.startswith("pg_"):
-            raise SafetyError("Không được truy vấn bảng hệ thống.", "forbidden")
-        tables.add(name)
-    if policy.allowed_tables is not None:
-        bad = tables - policy.allowed_tables
-        if bad:
-            raise SafetyError(f"Vai trò {policy.name} không được đọc bảng: {', '.join(sorted(bad))}.", "forbidden")
-    denied = {c for t, c in policy.denied_columns if t in tables}
-    if denied:
-        used = {c.name.lower() for c in tree.find_all(exp.Column)}
-        # chỉ tính `*` / `c.*` trong danh sách cột của SELECT, không tính COUNT(*)
-        star = any(isinstance(p, exp.Star) or (isinstance(p, exp.Column) and isinstance(p.this, exp.Star))
-                   for sel in tree.find_all(exp.Select) for p in sel.expressions)
-        hit = used & denied
-        if hit or star:
-            cols = ", ".join(sorted(hit)) if hit else "* (bao gồm " + ", ".join(sorted(denied)) + ")"
-            raise SafetyError(f"Vai trò {policy.name} không được đọc cột: {cols}.", "forbidden")
-    return tables
+    return check_ast(sql, policy, dialect, PG_RULES)
 
 
 class PostgresBackend(Backend):
@@ -74,6 +38,8 @@ class PostgresBackend(Backend):
         super().__init__(max_rows, timeout_s)
         import psycopg  # noqa: F401  (báo lỗi sớm nếu chưa cài)
         self.url = url
+        import psycopg
+        self.database_name = psycopg.conninfo.conninfo_to_dict(url).get("dbname")
         self.schema_name = schema
 
     def describe(self):
