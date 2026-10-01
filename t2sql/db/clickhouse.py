@@ -5,7 +5,7 @@ ClickHouse không có transaction/ROLLBACK, nên an toàn dựa vào quyền c�
   2. Phân tích cú pháp bằng sqlglot: cấm table function (url, file, s3, remote, mysql...), bảng system.*,
      mệnh đề SETTINGS / FORMAT, hàm sleep/dictGet..., bảng/cột ngoài quyền của vai trò
   3. Trong ClickHouse: mỗi vai trò là một user riêng (t2sql_admin / t2sql_analyst / t2sql_sales) với profile
-     readonly=2, join_use_nulls=1, giới hạn thời gian/bộ nhớ/số dòng (xem docker/clickhouse/sql/03_access.sql)
+     readonly=2, join_use_nulls=1, giới hạn thời gian/bộ nhớ/số dòng
   4. Mỗi truy vấn gửi kèm max_execution_time và max_result_rows (result_overflow_mode=break)
 
 URL: clickhouse://<tiền tố user>:<mật khẩu>@host:8123/<database>   (clickhouses:// cho HTTPS)

@@ -18,7 +18,7 @@ streamlit run app.py                    # demo web
 
 python evaluate.py --configs baseline   # baseline accuracy (Mức 1)
 python evaluate.py --configs all        # bảng ablation (Mức 2) -> results/clickhouse*/report.md
-python -m unittest -v                   # 113 test, không gọi API (các test cần database einvoice giả lập tự bỏ qua nếu không có)
+python -m unittest -v                   # 47 test, không gọi API, không cần database
 python evaluate.py --configs all --oracle   # tự kiểm tra harness chấm điểm, không gọi API
 ```
 
@@ -35,16 +35,11 @@ docker compose exec app python cli.py --config production    # CLI trong contain
 python profile_clickhouse.py            # đo Duration, Read Rows, Memory, CPU từ system.query_log (chạy trên máy host)
 
 docker compose down                     # dừng
-docker compose down -v                  # dừng và xóa volume ClickHouse cục bộ (nếu có dùng profile demo)
 ```
 
 | Service | Nội dung |
 |---|---|
-| `clickhouse` | `clickhouse-server:25.8`. Lần đầu chạy [docker/clickhouse/](docker/clickhouse/): tạo profile `t2sql_ro` và ba user chỉ đọc `t2sql_admin` / `t2sql_analyst` / `t2sql_sales`. Cổng HTTP chỉ mở cho máy local (`127.0.0.1:8123`) |
 | `app` | Streamlit (cổng 8501), chạy bằng user thường, có healthcheck. `logs/` và `results/` được mount ra ngoài. Ô "Database" trong sidebar chọn giữa các `T2SQL_DATABASE_URL*` |
-
-Container chỉ tạo user / role; dữ liệu và quyền đọc bảng do từng bộ dữ liệu cấp (`datasets/<tên>/access.sql`, chạy bởi `generate.py`).
-Bộ dữ liệu `shop` (6 bảng) cũ đã bị xóa cùng backend SQLite; lấy lại từ lịch sử git (commit `9fa26cb`) nếu cần.
 
 ## ClickHouse
 
@@ -52,16 +47,10 @@ Backend: [t2sql/db/clickhouse.py](t2sql/db/clickhouse.py), driver `clickhouse-co
 URL `clickhouse://t2sql:<mật khẩu>@127.0.0.1:8123/<database>`; `clickhouses://` cho HTTPS.
 Dùng `127.0.0.1`, không dùng `localhost`: trên Windows, `localhost` thử IPv6 trước nên mỗi kết nối chậm thêm 5 giây.
 
-**An toàn.** ClickHouse không có transaction nên không `ROLLBACK` được; an toàn dựa vào quyền của user:
-1. Mỗi vai trò là một user riêng: `t2sql_admin`, `t2sql_analyst`, `t2sql_sales`. Backend lấy tiền tố `t2sql` trong URL rồi ghép với tên vai trò.
-   Muốn dùng một user chung: `T2SQL_CH_USER_TEMPLATE={user}`.
-   Quyền cấp bằng `GRANT SELECT` theo bảng / cột ([03_access.sql](docker/clickhouse/sql/03_access.sql)): analyst không đọc được `email` / `phone`.
-2. Cả ba user dùng profile `t2sql_ro`:
-   - `readonly=2`;
-   - `join_use_nulls=1`, khóa bằng `CONST`;
-   - giới hạn `max_execution_time`, `max_memory_usage`, `max_rows_to_read`, `max_result_rows`, có mức `MAX` để client không nới được.
-3. Không cấp `CREATE TEMPORARY TABLE` / `SOURCES`, nên không dùng được `url()`, `file()`, `s3()`, `remote()`, `mysql()`.
-   `select_from_system_db_requires_grant` được bật, nên user không đọc được `system.*`.
+**An toàn.** ClickHouse không có transaction nên không `ROLLBACK` được; an toàn dựa vào quyền của tài khoản và các lớp kiểm tra phía app:
+1. Tài khoản kết nối chỉ có quyền `SELECT`. URL có `?single_user=1` nên mọi vai trò trong app dùng chung một tài khoản; phân quyền theo vai trò (`admin` / `analyst`, che 15 cột cá nhân) do app thực hiện, định nghĩa trong mục `policies` của `schema_docs.json`.
+2. Khi tài khoản ở chế độ `readonly=1` (không đổi được setting), backend không gửi setting và đọc kết quả dạng luồng, dừng sau `max_rows` dòng.
+3. Nên xin DBA một profile giới hạn phía server (`max_execution_time`, `max_memory_usage`, `max_rows_to_read`); hiện chặn tải chủ yếu ở phía app (`cost_guard` dùng `EXPLAIN ESTIMATE`).
 4. Phía app, mỗi câu SQL do model sinh ra lần lượt qua kiểm tra tĩnh (một câu lệnh, chỉ SELECT, cấm từ khóa ghi) rồi kiểm tra cây cú pháp bằng `sqlglot`, chặn thêm:
    - table function (kể cả `numbers()`);
    - bảng `system.*`;
@@ -81,62 +70,22 @@ Dùng `127.0.0.1`, không dùng `localhost`: trên Windows, `localhost` thử IP
 - Mọi SQL mẫu và SQL chuẩn của các bộ dữ liệu viết thẳng bằng ClickHouse (trường `sql`); không còn bước chuyển dialect.
 
 **Dùng ClickHouse thật của công ty:**
-1. Sửa database, bảng, cột và mật khẩu trong `03_access.sql`, rồi chạy bằng user quản trị (cần `access_management`). Nên trỏ vào read replica.
+1. Xin tài khoản chỉ đọc, nên trỏ vào read replica. `python connect_company.py` kiểm tra kết nối, quyền ghi, giới hạn setting và `query_log`; `--init` tạo `datasets/<db>/schema_docs.json` khởi đầu.
 2. Tạo thư mục `datasets/<tên database>/` với `schema_docs.json` (quan hệ, mô tả, quy tắc nghiệp vụ, phân quyền theo vai trò). Nếu JSON không có mô tả, app đọc `COMMENT` của bảng / cột.
-3. Đặt `T2SQL_DATABASE_URL` (hoặc `T2SQL_DATABASE_URL_DOCKER` khi chạy trong Docker; khi đó không cần service `clickhouse`).
+3. Đặt `T2SQL_DATABASE_URL` (hoặc `T2SQL_DATABASE_URL_DOCKER` khi chạy trong Docker).
 4. Với bảng lớn, chỉnh `max_rows_to_read` / `max_memory_usage` trong profile cho vừa cluster.
 
 ## Database thật của công ty: `hddt`
 
 Bộ dữ liệu nằm ở [datasets/hddt/](datasets/hddt/): `schema_docs.json` (mô tả cột, quy tắc nghiệp vụ, phân quyền `admin` / `analyst`),
-`eval.json` (46 câu) và `eval_holdout.json` (21 câu), `fewshot_pool.json`, [huong_dan_demo.md](datasets/hddt/huong_dan_demo.md) và
+`eval.json` (66 câu: 63 trả lời được + 3 phải từ chối), `eval_holdout.json` (30 câu), `eval_paraphrase.json` (36 câu diễn đạt lại), `fewshot_pool.json` (17 ví dụ), [huong_dan_demo.md](datasets/hddt/huong_dan_demo.md) và
 [cau_hoi_can_xac_nhan.md](datasets/hddt/cau_hoi_can_xac_nhan.md) (những điều cần người hiểu dữ liệu xác nhận).
-Database `einvoice` giả lập cũ đã được xóa khỏi môi trường; mã sinh dữ liệu và bộ đánh giá vẫn giữ ở [datasets/einvoice/](datasets/einvoice/).
+Database giả lập `einvoice` cũ (mã sinh dữ liệu, bộ đánh giá, container demo) đã bị xóa khỏi mã nguồn; lấy lại từ commit `f446b6a` nếu cần. Các báo cáo cũ vẫn giữ trong [report/](report/) và `results/`.
 
 ```bash
 python evaluate.py --configs production --workers 2            # chấm điểm trên database mặc định (hddt); đừng chạy quá nhiều luồng trên server dùng chung
 python evaluate.py --configs production --dataset datasets/hddt/eval_holdout.json
 ```
-
-## Hóa đơn điện tử giả lập trên ClickHouse (`einvoice`, ~100 triệu dòng; tùy chọn)
-
-Database giả lập dùng để chạy bộ test đầy đủ và thử nghiệm ở quy mô lớn mà không cần chạm vào dữ liệu thật. **Hiện không còn trong môi trường**;
-sinh lại khi cần. Mọi thứ nằm trong [datasets/einvoice/](datasets/einvoice/).
-
-```bash
-docker compose --profile demo up -d clickhouse
-python datasets/einvoice/generate.py              # ~5 phút, ~6 GB; --scale 0.02 để sinh bản nhỏ
-# đặt T2SQL_DATABASE_URL_EINVOICE trong .env (xem .env.example), rồi:
-python evaluate.py --db "$T2SQL_DATABASE_URL_EINVOICE" --configs baseline docs fewshot linking selfcorrect shapecheck
-python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"
-```
-
-Trong app, chọn **Database → ClickHouse · einvoice**. Vai trò, câu hỏi gợi ý và tài liệu nghiệp vụ tự đổi theo database đang chọn.
-
-| Bảng | Số dòng | Nội dung |
-|---|---|---|
-| `invoice_items` | 94 triệu | Dòng hàng: nhóm hàng, số lượng, đơn giá, thuế suất (10%, 8%, 5%, 0%, KCT, KKKNT) |
-| `invoices` | 37 triệu bản ghi / 27,6 triệu hóa đơn | ReplacingMergeTree: trạng thái, có mã / không mã, gốc / thay thế / điều chỉnh, ngoại tệ, kênh lập |
-| `api_requests` | 40 triệu | Log API tích hợp (UTC); có 2 sự cố: 18/03/2025 và 05/11/2024 |
-| `tax_messages` | 28 triệu | Thông điệp gửi cơ quan thuế (UTC): cấp mã, từ chối, lỗi kỹ thuật, gửi lại |
-| `daily_seller_stats` | 17,6 triệu | AggregatingMergeTree: tổng hợp theo ngày và người bán |
-| `buyers`, `sellers`, `subscriptions`, `certificates`, `invoice_series` + 5 bảng danh mục | 2 triệu / 50 nghìn / ... | Người mua, doanh nghiệp dùng dịch vụ, mua gói, chứng thư số, ký hiệu hóa đơn |
-
-Các bẫy được cài sẵn, giống ClickHouse thật (quy tắc tương ứng nằm trong [schema_docs.json](datasets/einvoice/schema_docs.json)):
-- **`invoices` phải đọc bằng `FINAL`.** Mỗi lần đổi trạng thái sinh thêm một phiên bản. Đọc không có `FINAL` thì số hóa đơn bị đội thêm khoảng 35% và doanh thu thêm khoảng 5%, vì lẫn cả hóa đơn đã hủy / bị thay thế.
-  Bảng tắt merge để các bản ghi trùng giữ nguyên, nhờ đó kết quả đánh giá không đổi theo thời gian.
-  Cú pháp đúng khi có alias: `FROM invoices AS i FINAL`. Viết `FROM invoices FINAL AS i` là lỗi cú pháp.
-- **Múi giờ:** `tax_messages` và `api_requests` lưu giờ UTC, còn hóa đơn lưu giờ Việt Nam. Lọc theo ngày hoặc giờ mà không dùng `toTimeZone` thì lệch 7 tiếng.
-- **Ngoại tệ:** khoảng 3% hóa đơn tính bằng USD/EUR, chiếm gần 12% doanh thu. Mọi cột tiền là nguyên tệ, phải nhân `exchange_rate` để ra VND.
-- **Bảng tổng hợp:** `daily_seller_stats` phải đọc bằng `sum()` và `uniqExactMerge()`, vì một (ngày, người bán) có nhiều dòng.
-- **`invoice_items` thiếu trạng thái và tỷ giá:** phải JOIN `invoices FINAL`. Thuế suất 10% giảm còn 8% từ 01/07/2023 cho các nhóm hàng được giảm.
-- **Tên doanh nghiệp trùng nhau**, nên phải nhóm theo `seller_id`. Câu hỏi đánh giá chỉ định doanh nghiệp bằng MST.
-
-**Bộ đánh giá** [eval.json](datasets/einvoice/eval.json): 16 câu dễ, 22 câu trung bình, 20 câu khó và 4 câu phải từ chối. SQL chuẩn viết thẳng bằng ClickHouse; câu chậm nhất chạy khoảng 2,5 giây.
-Pool few-shot có 26 câu, không trùng câu nào với bộ đánh giá.
-Phân quyền ([access.sql](datasets/einvoice/access.sql)):
-- `analyst` không đọc được email/điện thoại của người bán và người mua.
-- `sales` chỉ đọc được doanh nghiệp, gói, chứng thư, danh mục và bảng tổng hợp; không đọc được chi tiết hóa đơn.
 
 **Thêm một database khác theo cùng cách:** tạo thư mục `datasets/<tên database>/` gồm `schema_docs.json`, `fewshot_pool.json` và `eval.json`.
 Pipeline tự nạp thư mục này theo tên database trong URL ([t2sql/datasets.py](t2sql/datasets.py)).
@@ -148,10 +97,7 @@ Trong `schema_docs.json` có thể khai báo `sql_dialect`, `policies`, `require
 Thay vì viết tay từng quy tắc, thống kê chúng từ `system.query_log` rồi đưa vào prompt ([t2sql/history.py](t2sql/history.py)).
 
 ```bash
-python datasets/einvoice/make_query_log.py     # GIẢ LẬP lịch sử: chạy ~700 câu kiểu analyst bằng user bi_analyst (chỉ để thử)
-python mine_query_log.py                       # đọc system.query_log -> datasets/einvoice/query_history.jsonl + in tri thức khai thác được
-python evaluate.py --db "$T2SQL_DATABASE_URL_EINVOICE" --configs cold cold_history
-python rejudge_timeouts.py results/einv_cold   # chấm lại câu bị quá hạn vì database bận (xem bên dưới)
+python mine_query_log.py --db-env T2SQL_DATABASE_URL --url-credentials   # đọc system.query_log -> datasets/hddt/query_history.jsonl (không đưa lên git) + in tri thức khai thác được
 ```
 
 Khai thác được (chỉ giữ quy ước mà >= 60% truy vấn tuân theo và có >= 8 mẫu, nên nhiễu 12% bị bỏ qua):
@@ -182,9 +128,7 @@ Khai thác được (chỉ giữ quy ước mà >= 60% truy vấn tuân theo và
   nhưng vẫn cùng loại tác vụ. Thí nghiệm chứng minh cơ chế hoạt động, chưa chứng minh mức cải thiện trên log thật.
   Log thật lộn xộn hơn, nhiều analyst viết khác nhau, và nhiều quy ước không nhất quán.
 
-**Chấm lại câu bị quá hạn.** Chạy nhiều thí nghiệm song song làm ClickHouse quá tải: 57 câu bị chấm sai vì "quá 30s" dù SQL đúng
-(43 câu thực ra đúng khi chạy một mình; 14 câu vẫn quá hạn nên là truy vấn nặng thật). `rejudge_timeouts.py` chạy lại đúng SQL model đã sinh (không gọi lại model)
-khi database rảnh rồi chấm lại. Nên chạy các thí nghiệm tuần tự, và luôn chạy script này trước khi đọc kết quả.
+
 
 ## Cấu hình (`.env`)
 
@@ -250,15 +194,15 @@ câu hỏi ──► [chặn yêu cầu ghi] ──► [viết lại câu hỏi 
 
 | Thành phần | File | Ghi chú |
 |---|---|---|
-| Database mẫu | [datasets/einvoice/](datasets/einvoice/) | `generate.py` sinh 15 bảng, ~220 triệu dòng; có các bẫy giống ClickHouse thật (FINAL, múi giờ UTC, ngoại tệ, bảng tổng hợp), xem mục einvoice |
-| Mô tả nghiệp vụ | [datasets/einvoice/schema_docs.json](datasets/einvoice/schema_docs.json) | mô tả cột, quy tắc nghiệp vụ, quan hệ, phân quyền theo vai trò, từ khóa và khái niệm cho schema linking |
+| Dữ liệu | ClickHouse công ty, database `hddt` | `VATInvoice` (~14,1 triệu dòng) và `ProductInv` (~16,5 triệu dòng); phải dùng `FINAL` và `is_deleted = 0`, xem [huong_dan_demo.md](datasets/hddt/huong_dan_demo.md) |
+| Mô tả nghiệp vụ | [datasets/hddt/schema_docs.json](datasets/hddt/schema_docs.json) | mô tả cột, quy tắc nghiệp vụ, quan hệ, phân quyền theo vai trò, từ khóa và khái niệm cho schema linking |
 | Đọc schema | [t2sql/schema.py](t2sql/schema.py), [t2sql/db/clickhouse.py](t2sql/db/clickhouse.py) | `system.tables` / `system.columns` (kiểu, `COMMENT`); quan hệ lấy từ mục `relations` trong `schema_docs.json`; giá trị mẫu bỏ qua cột PII và văn bản tự do |
 | Tách SQL | [t2sql/sql_utils.py](t2sql/sql_utils.py) | bỏ markdown, lời giải thích thừa; tách câu lệnh theo `;` ngoài chuỗi/comment |
 | Prompt | [t2sql/prompts.py](t2sql/prompts.py) | schema nằm trong system prompt, câu hỏi trong user message |
 | Pipeline | [t2sql/pipeline.py](t2sql/pipeline.py) | `Config` bật/tắt từng cải tiến; `CONFIGS` gồm baseline, docs, fewshot, linking, selfcorrect, production |
 | Few-shot, linking | [t2sql/retrieval.py](t2sql/retrieval.py) | TF-IDF trên unigram + bigram âm tiết (hợp với tiếng Việt), thuần Python |
 | Backend DB | [t2sql/db/](t2sql/db/) | `clickhouse.py` (chọn theo `T2SQL_DATABASE_URL`), `guard.py`: kiểm tra AST bằng sqlglot. [t2sql/dialect.py](t2sql/dialect.py): gợi ý cú pháp ClickHouse cho prompt |
-| An toàn, phân quyền | [t2sql/safety.py](t2sql/safety.py), [t2sql/db/guard.py](t2sql/db/guard.py), [t2sql/db/clickhouse.py](t2sql/db/clickhouse.py) | vai trò `admin`, `analyst` (không được đọc email/phone), `sales` (chỉ bảng đơn hàng/sản phẩm) |
+| An toàn, phân quyền | [t2sql/safety.py](t2sql/safety.py), [t2sql/db/guard.py](t2sql/db/guard.py), [t2sql/db/clickhouse.py](t2sql/db/clickhouse.py) | vai trò `admin`, `analyst` (không được đọc email/phone), che 15 cột cá nhân |
 | Chấm điểm | [t2sql/evaluation.py](t2sql/evaluation.py), [evaluate.py](evaluate.py) | execution accuracy + phân nhóm lỗi |
 | Giao diện | [cli.py](cli.py), [app.py](app.py) | terminal và Streamlit |
 | Log | [t2sql/logstore.py](t2sql/logstore.py) | `logs/queries.jsonl`: câu hỏi, SQL, lỗi, độ trễ, phản hồi; câu được 👍 có thể bổ sung vào few-shot |
@@ -279,7 +223,7 @@ Cả hai là tùy chọn trong `Config`.
   - R7: kết quả không được toàn NULL.
 - Khi có nghi vấn, hệ thống gửi mô tả cụ thể cho model tự kiểm tra lại. Nếu model giữ nguyên SQL thì chấp nhận.
 - Khi kết quả hợp lệ thì không tốn thêm lần gọi model nào.
-- Đo offline bằng `python analyze_shape_checks.py`: 0/60 SQL chuẩn bị báo nhầm; trên khoảng 590 kết quả model đã sinh ở hai lượt trước, 14 lần báo đều đúng câu sai và 0 lần báo nhầm.
+- Đo offline trên bộ `einvoice` cũ (script đã xóa): 0/60 SQL chuẩn bị báo nhầm; trên khoảng 590 kết quả model đã sinh ở hai lượt trước, 14 lần báo đều đúng câu sai và 0 lần báo nhầm.
 - Có test bảo đảm SQL chuẩn không bao giờ bị báo nhầm.
 
 **Self-consistency** (`n_candidates=3`):
@@ -310,11 +254,11 @@ Kết quả (Postgres, reasoning tắt, 2 lượt, `results/robust_r1/`, `result
 
 ## Bộ đánh giá
 
-Bộ dev [eval.json](datasets/einvoice/eval.json): 62 câu (16 dễ, 22 trung bình, 20 khó, 4 câu phải từ chối). Bộ held-out
-[eval_holdout.json](datasets/einvoice/eval_holdout.json): 44 câu viết trước khi chạy model lần nào, dùng để đo khách quan.
-Mọi SQL chuẩn đều đã chạy thử và trả kết quả khác rỗng.
+Bộ dev [eval.json](datasets/hddt/eval.json): 66 câu (63 trả lời được + 3 phải từ chối). Bộ held-out
+[eval_holdout.json](datasets/hddt/eval_holdout.json): 30 câu (28 + 2). [eval_paraphrase.json](datasets/hddt/eval_paraphrase.json): 36 câu diễn đạt lại từ 12 câu gốc.
+Mọi SQL chuẩn đều đã chạy thử trên `hddt`. Bộ held-out đã được dùng để chỉnh docs ở các vòng trước nên không còn sạch hoàn toàn.
 
-Pool few-shot ([fewshot_pool.json](datasets/einvoice/fewshot_pool.json), 26 câu) tách riêng khỏi hai bộ đánh giá.
+Pool few-shot ([fewshot_pool.json](datasets/hddt/fewshot_pool.json), 17 ví dụ) tách riêng khỏi các bộ đánh giá.
 Có test bảo đảm không trùng câu hỏi, và khi chấm điểm câu đang hỏi luôn bị loại khỏi danh sách ví dụ.
 
 Cách chấm (execution accuracy):
@@ -328,7 +272,7 @@ Cách chấm (execution accuracy):
 ## Kết quả
 
 > Hai bảng đầu tiên (Postgres) và bảng "ClickHouse (1 lượt...)" là kết quả **lịch sử** trên bộ `shop` (đã xóa) và backend PostgreSQL (đã gỡ), giữ lại để tham khảo;
-> số liệu thô còn trong `results/postgres*` và `results/clickhouse/`. Phần "Hóa đơn điện tử `einvoice`" bên dưới là kết quả hiện hành.
+> bản tóm tắt còn trong `results/postgres*` và `results/clickhouse/` (file `.jsonl` thô đã xóa). Phần "Hóa đơn điện tử `einvoice`" bên dưới cũng là kết quả lịch sử (database giả lập đã xóa). Kết quả hiện hành trên `hddt` nằm ở [report/bao_cao_hddt.html](report/bao_cao_hddt.html).
 
 Lượt 2 (sau khi làm sạch cú pháp ví dụ few-shot Postgres): 51,7% → 90,0% → 95,0% → 96,7% → 96,7%, gần giống lượt 1 bên dưới.
 Lượt này có thêm số đo chi phí từng câu SQL (báo cáo cũ nằm trong `results/postgres/`).
@@ -417,7 +361,7 @@ trên PostgreSQL (lúc đó), 60 câu có đáp án + 4 câu phải từ chối.
 Đã kiểm chứng mà không cần API:
 - Chế độ `--oracle` (LLM giả trả SQL chuẩn bọc trong markdown và lời giải thích) đạt 100% ở mọi cấu hình.
   Như vậy khâu tách SQL, lớp an toàn (CTE, window function đều qua kiểm tra cú pháp) và bộ chấm điểm hoạt động đúng.
-- 101 unit test (cần database `einvoice`; các test quét toàn bộ SQL chuẩn chỉ chạy khi đặt `T2SQL_TEST_SLOW=1`): an toàn (chặn DROP / DELETE / ATTACH, nhiều câu lệnh, bảng `system.*`, table function `url()` / `file()`), kết nối chỉ đọc ngay cả khi bỏ kiểm tra cú pháp phía app, timeout với CROSS JOIN, giới hạn dòng, quyền bảng / cột (kể cả đọc gián tiếp qua CTE), che PII, vòng tự sửa có giới hạn, dừng khi model trả lại cùng SQL rỗng, chặn câu lệnh thứ hai bị chèn mà không thử lại, hội thoại nhiều lượt, hỏi lại, log / phản hồi, recall của schema linking (100% trên cả hai bộ đánh giá), và SQL chuẩn không bị kiểm tra hình dạng báo nhầm.
+- 47 unit test chạy offline (không cần database): an toàn (chặn DROP / DELETE / ATTACH, nhiều câu lệnh, bảng `system.*`, table function `url()` / `file()`), kết nối chỉ đọc ngay cả khi bỏ kiểm tra cú pháp phía app, timeout với CROSS JOIN, giới hạn dòng, quyền bảng / cột (kể cả đọc gián tiếp qua CTE), che PII, vòng tự sửa có giới hạn, dừng khi model trả lại cùng SQL rỗng, chặn câu lệnh thứ hai bị chèn mà không thử lại, hội thoại nhiều lượt, hỏi lại, log / phản hồi, recall của schema linking (100% trên cả hai bộ đánh giá), và SQL chuẩn không bị kiểm tra hình dạng báo nhầm.
 
 
 ## Hạn chế và lưu ý

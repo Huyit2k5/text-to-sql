@@ -33,7 +33,7 @@ Cần biết: tên gọi chính thức của từng giá trị (đặc biệt **
 **Trả lời:** ________________________________________________
 
 ### A3. Thế nào là hóa đơn "có hiệu lực" dùng để tính doanh thu, số hóa đơn phát hành, tiền thuế?
-- Ví dụ trên `einvoice` (dữ liệu giả lập) quy tắc là "đã được cấp mã, đã gửi hoặc bị điều chỉnh". Ở đây chưa biết.
+- Ở bộ giả lập cũ (đã xóa) quy tắc là "đã được cấp mã, đã gửi hoặc bị điều chỉnh". Ở đây chưa biết.
 - Câu hỏi: lọc theo `Status`, `TCTCheckStatus` hay cả hai? Có loại `Type = 3` (điều chỉnh giảm), `Type = 1` (thay thế) không?
 **Trả lời:** ________________________________________________
 

@@ -1,9 +1,4 @@
-"""Unit test (không gọi API).  Chạy:  python -m unittest -v
-
-Các test cần database chạy trên ClickHouse `einvoice` (docker compose up -d clickhouse, rồi
-python datasets/einvoice/generate.py); không có thì các test đó bị bỏ qua, còn lại vẫn chạy.
-URL lấy từ T2SQL_TEST_CH_URL hoặc T2SQL_DATABASE_URL_EINVOICE trong .env.
-Đặt T2SQL_TEST_SLOW=1 để chạy thêm các test quét toàn bộ SQL chuẩn (~1-2 phút).
+"""Unit test (không gọi API, không cần database).  Chạy:  python -m unittest -v
 """
 import json
 import os
@@ -21,11 +16,8 @@ def _dotenv(key):
     return ""
 
 
-EINVOICE_URL = os.environ.get("T2SQL_TEST_CH_URL") or _dotenv("T2SQL_DATABASE_URL_EINVOICE")
-os.environ["T2SQL_DATABASE_URL"] = EINVOICE_URL     # các test pipeline mặc định dùng database einvoice
 
-from t2sql import ROOT, datasets
-from t2sql.db import make_backend
+from t2sql import datasets
 from t2sql.evaluation import categorize, results_match
 from t2sql.llm import ScriptedLLM
 from t2sql.logstore import QueryLogger
@@ -36,31 +28,8 @@ from t2sql.schema import Schema
 from t2sql.sql_utils import extract_sql, parse_response, split_statements
 from t2sql.viz import choose_view
 
-SLOW = unittest.skipUnless(os.environ.get("T2SQL_TEST_SLOW"), "đặt T2SQL_TEST_SLOW=1 để chạy (quét toàn bộ SQL chuẩn)")
-
-
-def ev(max_rows=200, timeout_s=None):
-    """Backend ClickHouse cho database einvoice."""
-    return make_backend(EINVOICE_URL, max_rows=max_rows, timeout_s=timeout_s)
-
-
-def _ev_available():
-    if not EINVOICE_URL:
-        return False
-    try:
-        return ev().run("SELECT count() FROM invoice_items").ok
-    except Exception:
-        return False
-
-
-needs_ev = unittest.skipUnless(_ev_available(), "cần database einvoice (docker compose up -d clickhouse; python datasets/einvoice/generate.py)")
-EV = datasets.for_database("einvoice")
-POL = EV.policies      # admin / analyst / sales của bộ einvoice
-
-
-def load_items(name="eval.json"):
-    with open(os.path.join(ROOT, "datasets", "einvoice", name), encoding="utf-8") as f:
-        return json.load(f)
+HDDT = datasets.for_database("hddt")
+POL = HDDT.policies      # admin / analyst của bộ hddt
 
 
 class TestExtractSQL(unittest.TestCase):
@@ -93,65 +62,6 @@ class TestExtractSQL(unittest.TestCase):
         self.assertEqual(len(split_statements("SELECT 1; SELECT 2;")), 2)
 
 
-@needs_ev
-class TestSafety(unittest.TestCase):
-    def setUp(self):
-        self.ex = ev(max_rows=50, timeout_s=0.5)
-
-    def test_blocks_write_statements(self):
-        for sql in ["DROP TABLE sellers", "DELETE FROM invoices", "UPDATE invoices SET status = 1",
-                    "INSERT INTO provinces VALUES ('99', 'x', 'y')", "PRAGMA table_info(invoices)",
-                    "ATTACH DATABASE 'x.db' AS x"]:
-            with self.subTest(sql=sql):
-                self.assertRaises(SafetyError, static_check, sql)
-                self.assertFalse(self.ex.run(sql).ok)
-
-    def test_blocks_multi_statement(self):
-        res = self.ex.run("SELECT 1; DROP TABLE sellers")
-        self.assertEqual(res.error_code, "multi_statement")
-
-    def test_keyword_inside_string_is_allowed(self):
-        res = self.ex.run("SELECT COUNT(*) FROM sellers WHERE name LIKE '%DROP TABLE%'")
-        self.assertTrue(res.ok, res.error)
-        self.assertEqual(res.rows[0][0], 0)
-
-    def test_readonly_even_without_static_check(self):
-        res = self.ex.run("DELETE FROM provinces", safe=False)
-        self.assertFalse(res.ok)
-        self.assertGreater(self.ex.run("SELECT COUNT(*) FROM provinces").rows[0][0], 0)
-
-    def test_timeout_on_heavy_query(self):
-        res = self.ex.run("SELECT COUNT(*) FROM api_requests a, api_requests b")
-        self.assertEqual(res.error_code, "timeout")
-
-    def test_row_limit(self):
-        res = self.ex.run("SELECT * FROM sellers")
-        self.assertTrue(res.truncated)
-        self.assertEqual(len(res.rows), 50)
-
-    def test_table_permission(self):
-        res = self.ex.run("SELECT COUNT(*) FROM invoices", policy=POL["sales"])
-        self.assertEqual(res.error_code, "forbidden")
-        # subquery / CTE cũng bị bắt vì kiểm tra cú pháp thấy mọi bảng được đọc
-        res = self.ex.run("WITH x AS (SELECT status FROM invoices LIMIT 5) SELECT * FROM x", policy=POL["sales"])
-        self.assertEqual(res.error_code, "forbidden")
-        self.assertTrue(self.ex.run("SELECT COUNT(*) FROM sellers", policy=POL["sales"]).ok)
-
-    def test_column_permission(self):
-        analyst = POL["analyst"]
-        self.assertEqual(self.ex.run("SELECT contact_email FROM sellers", policy=analyst).error_code, "forbidden")
-        self.assertEqual(self.ex.run("SELECT * FROM sellers", policy=analyst).error_code, "forbidden")
-        self.assertTrue(self.ex.run("SELECT name, tax_code FROM sellers LIMIT 3", policy=analyst).ok)
-
-    def test_pii_masking(self):
-        from t2sql.safety import Policy
-        res = self.ex.run("SELECT contact_email, contact_phone FROM sellers LIMIT 1", policy=Policy("admin", mask_pii=True))
-        email, phone = res.rows[0]
-        self.assertIn("***@", email)
-        self.assertIn("*", phone)
-
-    def test_system_tables_blocked(self):
-        self.assertFalse(self.ex.run("SELECT name FROM system.tables").ok)
 
 
 class TestEvaluation(unittest.TestCase):
@@ -190,59 +100,8 @@ class TestEvaluation(unittest.TestCase):
         self.assertEqual(categorize(item, rec), "business_logic")
 
 
-@needs_ev
-class TestDataset(unittest.TestCase):
-    def test_eval_sets_are_well_formed(self):
-        for name in ("eval.json", "eval_holdout.json"):
-            items = load_items(name)
-            self.assertEqual(len({i["id"] for i in items}), len(items))
-            self.assertGreaterEqual(len([i for i in items if i["sql"]]), 40)
-            for it in items:
-                if it["sql"]:
-                    static_check(it["sql"])
-                else:
-                    self.assertEqual(it["expect"], "cannot")
-
-    def test_fewshot_pool_does_not_leak(self):
-        with open(EV.fewshot_path, encoding="utf-8") as f:
-            pool = json.load(f)
-        eval_qs = {i["question"] for i in load_items()} | {i["question"] for i in load_items("eval_holdout.json")}
-        self.assertGreaterEqual(len(pool), 20)
-        for e in pool:
-            with self.subTest(q=e["question"]):
-                static_check(e["sql"])
-                self.assertNotIn(e["question"], eval_qs)
-
-    def test_schema_linking_recall(self):
-        schema = ev().load_schema(EV.docs_path)
-        schema.requires = {t: set(r) for t, r in EV.docs.get("requires", {}).items()}
-        linker = SchemaLinker(schema)
-        for name in ("eval.json", "eval_holdout.json"):
-            for it in load_items(name):
-                if it["sql"]:
-                    with self.subTest(id=it["id"]):
-                        self.assertTrue(tables_in_sql(it["sql"]) <= set(linker.link(it["question"])))
 
 
-@needs_ev
-class TestSchema(unittest.TestCase):
-    def setUp(self):
-        self.schema = ev().load_schema(EV.docs_path)
-
-    def test_baseline_has_no_docs(self):
-        text = self.schema.render(with_docs=False)
-        self.assertIn("TABLE invoices", text)
-        self.assertNotIn("FINAL", text)
-
-    def test_docs_contain_business_rules_and_samples(self):
-        text = self.schema.render(with_docs=True)
-        self.assertIn("FINAL", text)
-        self.assertIn("ví dụ:", text)
-
-    def test_no_pii_or_free_text_in_samples(self):
-        text = self.schema.render(with_docs=True)
-        self.assertNotIn("ketoan.", text)          # email liên hệ của doanh nghiệp
-        self.assertNotIn("@gmail.com", text)       # email người mua
 
 
 def scripted(responses):
@@ -251,112 +110,6 @@ def scripted(responses):
     return ScriptedLLM(lambda system, messages: next(it))
 
 
-@needs_ev
-class TestPipeline(unittest.TestCase):
-    def test_baseline_end_to_end(self):
-        llm = scripted(["```sql\nSELECT COUNT(*) FROM sellers\n```"])
-        ans = TextToSQL(llm, "baseline").ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(ans.kind, "result")
-        self.assertEqual(ans.result.rows, [(50000,)])
-
-    def test_sql_error_without_retry_does_not_crash(self):
-        ans = TextToSQL(scripted(["SELECT nope FROM sellers"]), "baseline").ask("x")
-        self.assertEqual(ans.kind, "result")
-        self.assertFalse(ans.result.ok)
-        self.assertIn("nope", ans.result.error)
-
-    def test_self_correction_fixes_error(self):
-        llm = scripted(["SELECT nope FROM sellers", "SELECT COUNT(*) FROM sellers"])
-        ans = TextToSQL(llm, "selfcorrect").ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(len(ans.attempts), 2)
-        self.assertTrue(ans.result.ok)
-        # lượt sửa phải chứa thông báo lỗi và SQL cũ
-        fix_turn = llm.calls[1][1]
-        self.assertEqual(fix_turn[1]["content"], "SELECT nope FROM sellers")
-        self.assertIn("nope", fix_turn[2]["content"])
-
-    def test_self_correction_is_bounded(self):
-        llm = ScriptedLLM(lambda s, m: "SELECT nope FROM sellers")
-        ans = TextToSQL(llm, "selfcorrect").ask("x")
-        self.assertEqual(len(ans.attempts), CONFIGS["selfcorrect"].max_retries + 1)
-
-    def test_empty_result_retry_stops_when_sql_repeats(self):
-        empty = "SELECT * FROM sellers WHERE company_type = 'Không tồn tại'"
-        llm = ScriptedLLM(lambda s, m: empty)
-        ans = TextToSQL(llm, "selfcorrect").ask("Doanh nghiệp loại không tồn tại")
-        self.assertEqual(len(ans.attempts), 2)  # hỏi lại một lần, model giữ nguyên -> dừng
-        self.assertTrue(ans.result.empty)
-
-    def test_injected_second_statement_is_blocked_without_retry(self):
-        llm = ScriptedLLM(lambda s, m: "SELECT 1; DROP TABLE sellers")
-        ans = TextToSQL(llm, "selfcorrect").ask("x")
-        self.assertEqual(ans.result.error_code, "multi_statement")
-        self.assertEqual(len(ans.attempts), 1)
-
-    def test_cannot_answer(self):
-        ans = TextToSQL(scripted(["CANNOT_ANSWER: Không có dữ liệu thời tiết."]), "baseline").ask("Thời tiết?")
-        self.assertEqual(ans.kind, "cannot")
-
-    def test_write_request_refused_before_llm(self):
-        llm = ScriptedLLM(lambda s, m: self.fail("không được gọi LLM"))
-        ans = TextToSQL(llm, "production").ask("Xóa tất cả hóa đơn nháp")
-        self.assertEqual(ans.kind, "refused")
-
-    def test_denied_columns_hidden_from_prompt(self):
-        llm = scripted(["SELECT COUNT(*) FROM sellers"])
-        TextToSQL(llm, "baseline").ask("Có bao nhiêu doanh nghiệp?", policy="analyst")
-        self.assertNotIn(" contact_email ", llm.calls[0][0])
-        self.assertIn(" province_code ", llm.calls[0][0])
-
-    def test_role_restricts_schema_in_prompt(self):
-        llm = scripted(["SELECT COUNT(*) FROM sellers"])
-        ans = TextToSQL(llm, "baseline").ask("Có bao nhiêu doanh nghiệp?", policy="sales")
-        self.assertNotIn("TABLE invoices", llm.calls[0][0])
-        self.assertTrue(ans.result.ok)
-
-    def test_fewshot_excludes_eval_question(self):
-        llm = scripted(["SELECT 1"])
-        pool_q = "Có bao nhiêu doanh nghiệp đang dùng ký số HSM?"
-        TextToSQL(llm, "fewshot").ask(pool_q, exclude_example=pool_q)
-        user_msg = llm.calls[0][1][0]["content"]
-        self.assertEqual(user_msg.count(pool_q), 1)  # chỉ xuất hiện ở câu hỏi, không ở ví dụ
-
-    def test_linking_shrinks_prompt(self):
-        llm = scripted(["SELECT quantileExact(0.5)(latency_ms) FROM api_requests"])
-        ans = TextToSQL(llm, "linking").ask("Độ trễ trung vị của API tạo hóa đơn là bao nhiêu?")
-        self.assertIn("api_requests", ans.tables_in_prompt)
-        self.assertLess(len(ans.tables_in_prompt), 8)
-
-    def test_multi_turn_rewrite_and_explanation(self):
-        def fn(system, messages):
-            if "câu hỏi độc lập" in system:
-                self.assertIn("năm 2025", messages[0]["content"])
-                return "Có bao nhiêu hóa đơn hợp lệ năm 2024?"
-            if system.startswith("Bạn giải thích"):
-                return "Đếm hóa đơn hợp lệ lập trong tháng 1/2024."
-            self.assertIn("năm 2024", messages[0]["content"])
-            return ("SELECT count() FROM invoices FINAL WHERE toYYYYMM(issued_at) = 202401 "
-                    "AND status IN ('cqt_cap_ma', 'da_gui_cqt', 'bi_dieu_chinh')")
-        history = [{"question": "Có bao nhiêu hóa đơn hợp lệ năm 2025?", "sql": "SELECT ..."}]
-        ans = TextToSQL(ScriptedLLM(fn), "production").ask("Còn năm 2024 thì sao?", history=history)
-        self.assertEqual(ans.standalone_question, "Có bao nhiêu hóa đơn hợp lệ năm 2024?")
-        self.assertTrue(ans.result.ok)
-        self.assertTrue(ans.explanation)
-
-    def test_clarify(self):
-        ans = TextToSQL(scripted(["CLARIFY: Tốt nhất theo số hóa đơn, doanh thu hay số người mua?"]),
-                        "production").ask("Doanh nghiệp nào tốt nhất?")
-        self.assertEqual(ans.kind, "clarify")
-        self.assertIn("doanh thu", ans.message)
-
-    def test_logging_and_feedback(self):
-        with tempfile.TemporaryDirectory() as d:
-            logger = QueryLogger(os.path.join(d, "q.jsonl"))
-            pipe = TextToSQL(scripted(["SELECT COUNT(*) FROM sellers"]), "baseline", logger=logger)
-            ans = pipe.ask("Có bao nhiêu doanh nghiệp?")
-            logger.feedback(ans.id, True)
-            self.assertEqual(logger.verified_examples(),
-                             [{"question": "Có bao nhiêu doanh nghiệp?", "sql": "SELECT COUNT(*) FROM sellers"}])
 
 
 class TestRetrievalAndViz(unittest.TestCase):
@@ -474,20 +227,6 @@ class TestOpenAICompat(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
 
-    @needs_ev
-    def test_end_to_end_with_think_block(self):
-        from t2sql.llm import OpenAICompatLLM
-        llm = OpenAICompatLLM(model="SDS-AI/softdream", base_url=self.url, api_key="k")
-        ans = TextToSQL(llm, "baseline").ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(ans.result.rows, [(50000,)])
-        path, auth, body = self.requests[-1]
-        self.assertEqual(path, "/v1/chat/completions")   # tự thêm /v1
-        self.assertEqual(auth, "Bearer k")
-        self.assertEqual(body["model"], "SDS-AI/softdream")
-        self.assertEqual(body["messages"][0]["role"], "system")
-        self.assertTrue(body["stream"])
-        self.assertEqual(llm.usage.input_tokens, 11)
-        self.assertEqual(llm.usage.output_tokens, 20)
 
     def test_progress_callback_sees_thinking_then_answer(self):
         from t2sql.llm import OpenAICompatLLM
@@ -609,18 +348,6 @@ class TestShapeChecks(unittest.TestCase):
     def test_r7_all_null(self):
         self.assertEqual(self.rules("Doanh thu năm 2030?", ["x"], [(None,)]), ["R7"])
 
-    @needs_ev
-    @SLOW
-    def test_no_false_positive_on_gold(self):
-        """Điều kiện bắt buộc: SQL chuẩn (bộ dev + held-out) không bị báo nghi vấn."""
-        from t2sql.checks import check_result
-        ex = ev(max_rows=10_000, timeout_s=60)
-        for name in ("eval.json", "eval_holdout.json"):
-            for it in load_items(name):
-                if it["sql"]:
-                    with self.subTest(id=it["id"]):
-                        res = ex.run(it["sql"])
-                        self.assertEqual(check_result(it["question"], res.columns, res.rows), [])
 
 
 H06_Q = "Trong mỗi kênh bán, gói dịch vụ nào có doanh thu bán cao nhất? Cho biết kênh, tên gói và doanh thu."
@@ -629,193 +356,10 @@ H06_BAD = ("SELECT s.channel, p.name, sum(s.amount_vnd) AS dt FROM subscriptions
 H06_GOOD = H06_BAD + " LIMIT 1 BY s.channel"
 
 
-@needs_ev
-class TestShapeCheckPipeline(unittest.TestCase):
-    def test_suspicious_result_is_sent_back_and_fixed(self):
-        llm = scripted([H06_BAD, H06_GOOD])
-        ans = TextToSQL(llm, "shapecheck").ask(H06_Q)
-        self.assertEqual(len(ans.attempts), 2)
-        self.assertEqual(ans.attempts[0].issues, ["R2"])
-        self.assertIn("lặp lại", llm.calls[1][1][-1]["content"])   # phản hồi gửi model có mô tả nghi vấn
-        self.assertEqual(len(ans.result.rows), 3)     # 3 kênh bán, mỗi kênh một gói
-        self.assertEqual(ans.attempts[1].issues, [])
-
-    def test_model_keeping_sql_is_accepted(self):
-        llm = ScriptedLLM(lambda s, m: H06_BAD)
-        ans = TextToSQL(llm, "shapecheck").ask(H06_Q)
-        self.assertEqual(len(ans.attempts), 2)   # hỏi lại một lần, model giữ nguyên -> dừng, không ép tiếp
-        self.assertEqual(ans.sql, H06_BAD)
-
-    def test_disabled_in_selfcorrect(self):
-        ans = TextToSQL(scripted([H06_BAD]), "selfcorrect").ask(H06_Q)
-        self.assertEqual(len(ans.attempts), 1)
-
-    def test_sql_without_table_is_sent_back(self):
-        """R0: "SELECT count()" không có FROM vẫn chạy (ClickHouse trả 1) nhưng không lấy từ dữ liệu."""
-        llm = scripted(["SELECT 1 AS trung_binh", "SELECT AVG(amount_vnd) FROM subscriptions"])
-        ans = TextToSQL(llm, "shapecheck").ask("Trung bình mỗi đơn mua gói thu bao nhiêu tiền?")
-        self.assertEqual(ans.attempts[0].issues, ["R0"])
-        self.assertIn("FROM", llm.calls[1][1][-1]["content"])
-        self.assertEqual(ans.sql, "SELECT AVG(amount_vnd) FROM subscriptions")
 
 
-@needs_ev
-class TestImprovements(unittest.TestCase):
-    """Danh mục, chặn truy vấn nặng, tự soát logic, reasoning cho câu khó (cấu hình lookup / costguard / verify / reasoning)."""
-
-    def cfg(self, **kw):
-        base = dict(use_docs=True, use_linking=True, max_retries=3, shape_check=True)
-        base.update(kw)
-        return Config("test", **base)
-
-    def test_lookup_tables_and_value_linking(self):
-        llm = scripted(["SELECT count() FROM sellers WHERE province_code = '48'"])
-        pipe = TextToSQL(llm, self.cfg(lookup_tables=True))
-        self.assertIn("provinces", pipe.lookups)
-        ans = pipe.ask("Có bao nhiêu doanh nghiệp ở Đà Nẵng?")
-        self.assertIn("provinces", ans.tables_in_prompt)
-        system = llm.calls[0][0]
-        self.assertIn("DANH MỤC ĐẦY ĐỦ", system)
-        self.assertIn("Đà Nẵng", system)
-
-    def test_cost_guard_asks_for_cheaper_sql_before_running(self):
-        from unittest import mock
-        heavy, light = "SELECT SUM(amount_vnd) FROM subscriptions", "SELECT SUM(amount_vnd) FROM subscriptions WHERE subscription_id < 100"
-        llm = scripted([heavy, light])
-        pipe = TextToSQL(llm, self.cfg(cost_guard=True, cost_guard_rows=1000))
-        est = lambda sql, policy=None: (5000, {"subscriptions": 5000}) if sql == heavy else (10, {"subscriptions": 10})
-        with mock.patch.object(pipe.backend, "estimate_rows", side_effect=est), \
-                mock.patch.object(pipe.backend, "run", wraps=pipe.backend.run) as run:
-            ans = pipe.ask("Tổng tiền các đơn mua gói đầu tiên")
-        self.assertEqual([a.estimated_rows for a in ans.attempts], [5000, None])
-        self.assertEqual([c.args[0] for c in run.call_args_list], [light])   # SQL nặng không được chạy
-        self.assertIn("dự kiến đọc khoảng 5,000 dòng", llm.calls[1][1][-1]["content"])
-
-    def test_cost_guard_accepts_repeated_sql(self):
-        from unittest import mock
-        heavy = "SELECT SUM(amount_vnd) FROM subscriptions"
-        pipe = TextToSQL(scripted([heavy, heavy]), self.cfg(cost_guard=True, cost_guard_rows=1000))
-        with mock.patch.object(pipe.backend, "estimate_rows", return_value=(5000, {"subscriptions": 5000})):
-            ans = pipe.ask("Tổng tiền các đơn mua gói")
-        self.assertTrue(ans.result.ok)
-        self.assertEqual(len(ans.attempts), 2)
-
-    def test_semantic_check_sends_reason_back(self):
-        bad = "SELECT seller_id, SUM(amount_vnd) FROM subscriptions GROUP BY seller_id ORDER BY 2 DESC LIMIT 1"
-        good = "SELECT subscription_id, amount_vnd FROM subscriptions ORDER BY amount_vnd DESC LIMIT 1"
-        llm = scripted([bad, "SAI: câu hỏi cần một đơn, không phải tổng theo doanh nghiệp", good])
-        ans = TextToSQL(llm, self.cfg(semantic_check=True)).ask("Đơn mua gói có số tiền lớn nhất?")
-        self.assertEqual(ans.sql, good)
-        self.assertEqual(ans.attempts[0].verdict, "câu hỏi cần một đơn, không phải tổng theo doanh nghiệp")
-        self.assertIn("QUY TẮC NGHIỆP VỤ", llm.calls[1][1][0]["content"])      # lời gọi soát lỗi
-        self.assertIn("không phải tổng theo doanh nghiệp", llm.calls[2][1][-1]["content"])
-        self.assertEqual(len(llm.calls), 3)          # chỉ soát một lần mỗi chuỗi
-
-    def test_semantic_check_ok_keeps_sql(self):
-        sql = "SELECT COUNT(*) FROM sellers"
-        llm = scripted([sql, "OK"])
-        ans = TextToSQL(llm, self.cfg(semantic_check=True)).ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual((ans.sql, len(llm.calls), ans.attempts[0].verdict), (sql, 2, None))
-
-    def test_reasoning_only_for_hard_questions(self):
-        from t2sql.pipeline import looks_hard
-        self.assertTrue(looks_hard("Doanh thu tháng 6 tăng bao nhiêu phần trăm so với tháng 5?", 2))
-        self.assertFalse(looks_hard("Có bao nhiêu doanh nghiệp ở Hà Nội?", 5))
-        llm = scripted(["SELECT COUNT(*) FROM sellers", "SELECT 100.0 * countIf(status = 'closed') / count() FROM sellers"])
-        pipe = TextToSQL(llm, self.cfg(reasoning_hard="medium"))
-        self.assertIsNone(pipe.ask("Có bao nhiêu doanh nghiệp?").reasoning)
-        self.assertEqual(pipe.ask("Tỷ lệ doanh nghiệp đã ngừng dịch vụ là bao nhiêu phần trăm?").reasoning, "medium")
-        self.assertEqual(llm.reasoning_levels, [None, "medium"])
 
 
-@needs_ev
-class TestReviewFixes(unittest.TestCase):
-    """Hồi quy cho các lỗi tìm thấy khi review."""
-
-    def test_tables_in_sql_handles_quotes_and_schema_prefix(self):
-        self.assertEqual(tables_in_sql('SELECT 1 FROM "orders"'), {"orders"})
-        self.assertEqual(tables_in_sql("SELECT 1 FROM `invoices` FINAL"), {"invoices"})
-        self.assertEqual(tables_in_sql('SELECT 1 FROM einvoice.invoices o JOIN "einvoice"."sellers" c ON 1'), {"invoices", "sellers"})
-        self.assertEqual(tables_in_sql("SELECT 1"), set())
-
-    def test_percent_with_a_space_after_a_number_is_still_a_filter_value(self):
-        from t2sql.checks import _PERCENT
-        for q in ("thuế suất 5%", "thuế suất 5 %", "giảm 10,5 %"):
-            self.assertFalse(_PERCENT.search(q), q)
-        for q in ("tỷ lệ % hóa đơn", "chiếm bao nhiêu %", "phần trăm hóa đơn"):
-            self.assertTrue(_PERCENT.search(q), q)
-
-    def test_rename_as_an_alias_is_allowed_but_rename_statement_is_not(self):
-        self.assertEqual(static_check("SELECT 1 AS rename"), "SELECT 1 AS rename")
-        for sql in ("RENAME TABLE a TO b", "SELECT 1; RENAME TABLE a TO b"):
-            self.assertRaises(SafetyError, static_check, sql)
-
-    def test_database_choices_keeps_two_servers_with_the_same_database_name(self):
-        import importlib.util, os, sys
-        from unittest import mock
-        src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
-        start = src.index("def database_choices")
-        ns = {"os": os}
-        exec(src[start:src.index("@st.cache_resource")], ns)
-        env = {"T2SQL_DATABASE_URL": "clickhouse://u:p@a.local:8123/einvoice",
-               "T2SQL_DATABASE_URL_B": "clickhouse://u:p@b.local:8123/einvoice"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            out = ns["database_choices"]()
-        self.assertEqual(len(out), 2)
-        self.assertTrue(all("p@" not in k and ":p" not in k for k in out), list(out))
-
-    @needs_ev
-    def test_cost_limit_comes_from_dataset_docs_unless_env_overrides(self):
-        from unittest import mock
-        docs = dict(EV.docs, cost_guard_rows=123)
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "schema_docs.json")
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(docs, f)
-            env = {k: v for k, v in os.environ.items() if k != "T2SQL_MAX_ESTIMATED_ROWS"}
-            with mock.patch.dict(os.environ, env, clear=True):
-                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL, docs_path=path).cost_limit, 123)
-                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL).cost_limit, 40_000_000)
-            with mock.patch.dict(os.environ, {"T2SQL_MAX_ESTIMATED_ROWS": "7"}):
-                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL, docs_path=path).cost_limit, 7)
-
-    @needs_ev
-    def test_missing_fewshot_pool_runs_without_examples(self):
-        pipe = TextToSQL(scripted(["SELECT count() FROM sellers"]), "history", db=EINVOICE_URL,
-                         fewshot_path="khong_ton_tai.json")
-        self.assertIsNone(pipe.retriever)
-        self.assertEqual(pipe.ask("Có bao nhiêu doanh nghiệp?").kind, "result")
-
-    def test_quoted_table_is_not_flagged_as_missing_from(self):
-        ans = TextToSQL(scripted(['SELECT COUNT(*) FROM "sellers"']), "shapecheck").ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(ans.attempts[0].issues, [])
-        self.assertEqual(len(ans.attempts), 1)
-
-    def test_verifier_failure_keeps_good_result(self):
-        from t2sql.llm import LLMError
-        outs = iter(["SELECT COUNT(*) FROM sellers"])
-
-        def fn(system, messages):
-            if system.startswith("Bạn là người soát lỗi"):
-                raise LLMError("hết thời gian chờ")
-            return next(outs)
-        ans = TextToSQL(ScriptedLLM(fn), Config("t", use_docs=True, max_retries=2, semantic_check=True)).ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(ans.kind, "result")
-        self.assertTrue(ans.result.ok)
-
-    def test_topn_with_each_word_but_ranking_column_still_checked(self):
-        from t2sql.checks import check_result
-        rows = [(f"sp{i}", 100 - i) for i in range(50)]
-        rules = [i.rule for i in check_result("Top 5 sản phẩm bán chạy nhất, doanh thu từng sản phẩm", ["name", "rev"], rows)]
-        self.assertEqual(rules, ["R4"])
-
-    def test_empty_allowed_tables_means_no_access(self):
-        from t2sql.datasets import Dataset
-        d = Dataset("x", "", None, None, docs={"policies": {"locked": {"allowed_tables": []}, "open": {}}})
-        self.assertEqual(d.policies["locked"].allowed_tables, set())
-        self.assertIsNone(d.policies["open"].allowed_tables)
-        res = TextToSQL(scripted(["SELECT 1 FROM orders"]), "docs").executor.run("SELECT COUNT(*) FROM sellers", policy=d.policies["locked"])
-        self.assertEqual(res.error_code, "forbidden")
 
 
 class TestHistoryKnowledge(unittest.TestCase):
@@ -881,62 +425,6 @@ class TestHistoryKnowledge(unittest.TestCase):
         self.assertNotIn("nhap", text)
 
 
-@needs_ev
-class TestSelfConsistency(unittest.TestCase):
-    def cfg(self, **kw):
-        from dataclasses import replace
-        return replace(CONFIGS["consistency"], **kw)
-
-    def by_temperature(self, greedy, *samples):
-        """LLM giả: temperature None -> SQL greedy; các lần lấy mẫu lần lượt nhận samples."""
-        it = iter(samples)
-        seen = []
-
-        def fn(system, messages):
-            return None
-        llm = ScriptedLLM(fn)
-
-        def complete(system, messages, max_tokens=16000, temperature=None, reasoning=None):
-            seen.append(temperature)
-            with llm._lock:
-                return greedy if temperature is None else next(it)
-        llm.complete = complete
-        llm.seen = seen
-        return llm
-
-    def test_majority_vote_overrides_greedy(self):
-        good = "SELECT COUNT(*) FROM sellers"
-        llm = self.by_temperature("SELECT COUNT(*) FROM provinces", good, "SELECT COUNT(seller_id) FROM sellers")
-        ans = TextToSQL(llm, self.cfg(early_stop=False)).ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(ans.result.rows[0][0], 50000)
-        self.assertEqual(ans.agreement, "2/3")
-        self.assertEqual(sorted(t is None for t in llm.seen), [False, False, True])
-
-    def test_early_stop_when_first_two_agree(self):
-        llm = self.by_temperature("SELECT COUNT(*) FROM sellers", "SELECT COUNT(seller_id) FROM sellers", "SELECT 1")
-        ans = TextToSQL(llm, self.cfg()).ask("Có bao nhiêu doanh nghiệp?")
-        self.assertEqual(len(llm.seen), 2)
-        self.assertEqual(ans.agreement, "2/2")
-
-    def test_failed_candidates_do_not_vote(self):
-        llm = self.by_temperature("SELECT nope FROM sellers", "SELECT COUNT(*) FROM sellers", "SELECT nope2 FROM x")
-        cfg = self.cfg(early_stop=False, max_retries=0)
-        ans = TextToSQL(llm, cfg).ask("Có bao nhiêu doanh nghiệp?")
-        self.assertTrue(ans.result.ok)
-        self.assertEqual(ans.agreement, "1/3")
-
-    def test_flagged_candidate_loses_to_clean_one(self):
-        llm = self.by_temperature(H06_BAD, H06_GOOD, H06_BAD)
-        cfg = self.cfg(early_stop=False, max_retries=0, shape_check=True)
-        ans = TextToSQL(llm, cfg).ask(H06_Q)
-        self.assertEqual(len(ans.result.rows), 3)
-        self.assertEqual([c["winner"] for c in ans.candidates], [False, True, False])
-
-    def test_refusals_vote_together(self):
-        llm = self.by_temperature("CANNOT_ANSWER: không có dữ liệu", "CANNOT_ANSWER: không có", "SELECT 1")
-        ans = TextToSQL(llm, self.cfg()).ask("Thời tiết hôm nay?")
-        self.assertEqual(ans.kind, "cannot")
-        self.assertEqual(ans.agreement, "2/2")
 
 
 class TestClickHouseOffline(unittest.TestCase):
@@ -979,8 +467,8 @@ class TestClickHouseOffline(unittest.TestCase):
         self.assertEqual(shared.username(POL["admin"]), "huy")
         self.assertEqual(shared.username(POL["analyst"]), "huy")
         self.assertEqual((shared.secure, shared.port, shared.password, shared.database), (True, 8443, "p@ss", "sales"))
-        demo = ClickHouseBackend("clickhouse://t2sql:x@127.0.0.1:8123/einvoice")
-        self.assertEqual(demo.username(POL["analyst"]), "t2sql_analyst")
+        per_role = ClickHouseBackend("clickhouse://t2sql:x@127.0.0.1:8123/hddt")
+        self.assertEqual(per_role.username(POL["analyst"]), "t2sql_analyst")
 
     def test_policy_table_and_column_names_are_case_insensitive(self):
         from t2sql.db.clickhouse import ast_check
@@ -1003,7 +491,7 @@ class TestClickHouseOffline(unittest.TestCase):
         from t2sql.db.clickhouse import ast_check
         cases = {"SELECT * FROM url('http://x/a.csv', CSV)": "forbidden_function",
                  "SELECT * FROM file('/etc/passwd', LineAsString)": "forbidden_function",
-                 "SELECT * FROM remote('h', einvoice, invoices)": "forbidden_function",
+                 "SELECT * FROM remote('h', hddt, VATInvoice)": "forbidden_function",
                  "SELECT count() FROM numbers(1000000000)": "forbidden_function",
                  "SELECT sleepEachRow(1) FROM orders": "forbidden_function",
                  "SELECT dictGet('d', 'a', 1)": "forbidden_function",
@@ -1016,10 +504,10 @@ class TestClickHouseOffline(unittest.TestCase):
                 with self.assertRaises(SafetyError) as cm:
                     ast_check(sql, POLICIES["admin"])
                 self.assertEqual(cm.exception.code, code)
-        self.assertEqual(ast_check("SELECT toYear(purchased_at) y, count() FROM subscriptions GROUP BY y ORDER BY y "
-                                   "LIMIT 3 BY y", POL["sales"]), {"subscriptions"})
+        self.assertEqual(ast_check("SELECT toYear(ArisingDate) y, count() FROM VATInvoice FINAL GROUP BY y ORDER BY y "
+                                   "LIMIT 3 BY y", POL["analyst"]), {"vatinvoice"})
         with self.assertRaises(SafetyError):
-            ast_check("SELECT contact_email FROM sellers", POL["analyst"])
+            ast_check("SELECT CusPhone FROM VATInvoice", POL["analyst"])
 
     def test_error_message_is_cleaned(self):
         from t2sql.db.clickhouse import _error_parts
@@ -1080,19 +568,17 @@ class TestDatasets(unittest.TestCase):
             datasets.for_database("khong_co_bo_du_lieu_nay")
         with self.assertRaises(FileNotFoundError):
             datasets.for_database(None)
-        ev_ds = datasets.for_database("einvoice")
-        self.assertEqual((ev_ds.name, ev_ds.sql_dialect), ("einvoice", "clickhouse"))
-        self.assertTrue(ev_ds.eval_path.endswith("eval.json") and ev_ds.fewshot_path.endswith("fewshot_pool.json"))
-        self.assertIn(("buyers", "email"), ev_ds.policies["analyst"].denied_columns)
-        self.assertNotIn("invoices", ev_ds.policies["sales"].allowed_tables)
-        self.assertIsNone(ev_ds.policies["admin"].allowed_tables)
+        ds = datasets.for_database("hddt")
+        self.assertEqual((ds.name, ds.sql_dialect), ("hddt", "clickhouse"))
+        self.assertTrue(ds.eval_path.endswith("eval.json") and ds.fewshot_path.endswith("fewshot_pool.json"))
+        self.assertIn(("VATInvoice", "CusPhone"), ds.policies["analyst"].denied_columns)
+        self.assertEqual(ds.policies["admin"].allowed_tables, {"VATInvoice", "ProductInv"})
 
     def test_default_policies_only_admin(self):
         self.assertEqual(set(POLICIES), {"admin"})
 
-    def test_einvoice_files_are_consistent(self):
-        from t2sql import datasets
-        ev = datasets.for_database("einvoice")
+    def test_hddt_files_are_consistent(self):
+        ev = datasets.for_database("hddt")
         with open(ev.eval_path, encoding="utf-8") as f:
             items = json.load(f)
         with open(ev.fewshot_path, encoding="utf-8") as f:
@@ -1103,100 +589,6 @@ class TestDatasets(unittest.TestCase):
         for rel in ev.docs["relations"].items():
             for side in rel:
                 self.assertIn(side.split(".")[0], tables)
-
-
-@needs_ev
-class TestEInvoice(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from t2sql.db import make_backend
-        cls.ch = make_backend(EINVOICE_URL, max_rows=50, timeout_s=30)
-
-    def run_as(self, role, sql):
-        from t2sql import datasets
-        return self.ch.run(sql, policy=datasets.for_database("einvoice").policies[role])
-
-    def test_final_trap_exists(self):
-        """invoices giữ phiên bản cũ: không FINAL thì đếm nhiều hơn (bẫy cố ý của bộ dữ liệu)."""
-        raw = self.run_as("admin", "SELECT count() FROM invoices WHERE toYYYYMM(issued_at) = 202401").rows[0][0]
-        final = self.run_as("admin", "SELECT count() FROM invoices FINAL WHERE toYYYYMM(issued_at) = 202401").rows[0][0]
-        self.assertGreater(raw, final * 1.1)
-
-    def test_role_permissions_app_and_database(self):
-        from unittest import mock
-        self.assertEqual(self.run_as("analyst", "SELECT email FROM buyers").error_code, "forbidden")
-        self.assertTrue(self.run_as("analyst", "SELECT name FROM buyers LIMIT 1").ok)
-        self.assertEqual(self.run_as("sales", "SELECT count() FROM invoices").error_code, "forbidden")
-        self.assertTrue(self.run_as("sales", "SELECT sum(revenue_vnd) FROM daily_seller_stats WHERE day = toDate('2025-06-02')").ok)
-        with mock.patch("t2sql.db.clickhouse.ast_check", return_value=set()):
-            self.assertEqual(self.run_as("analyst", "SELECT phone FROM buyers").error_code, "forbidden")
-            self.assertEqual(self.run_as("sales", "SELECT count() FROM invoice_items").error_code, "forbidden")
-
-    def test_schema_introspection(self):
-        schema = ev().load_schema(EV.docs_path)
-        self.assertEqual(len(schema.tables), 15)
-        invoices = {c.name: c for c in schema.tables["invoices"].columns}
-        self.assertTrue(invoices["invoice_id"].pk)
-        self.assertFalse(invoices["issued_at"].pk)        # nằm trong khóa phân vùng / sắp xếp nhưng không phải khóa chính
-        self.assertEqual(invoices["seller_id"].fk, "sellers.seller_id")       # từ "relations" trong docs
-        self.assertEqual(invoices["issued_at"].type, "DateTime('Asia/Ho_Chi_Minh')")
-        self.assertIn("FINAL", schema.render(with_docs=True))
-
-    def test_left_join_returns_null(self):
-        """join_use_nulls=1 (profile t2sql_ro): doanh nghiệp chưa mua gói phải ra NULL, không phải 0."""
-        res = self.run_as("admin", "SELECT count() FROM sellers s LEFT JOIN subscriptions x ON x.seller_id = s.seller_id "
-                                   "WHERE x.subscription_id IS NULL")
-        self.assertEqual(res.rows, [(27,)])
-
-    def test_timeout_and_row_limit(self):
-        quick = make_backend(EINVOICE_URL, max_rows=50, timeout_s=1)
-        res = quick.run("SELECT count() FROM api_requests a, api_requests b")
-        self.assertEqual(res.error_code, "timeout")
-        res = quick.run("SELECT * FROM sellers")
-        self.assertTrue(res.truncated)
-        self.assertEqual(len(res.rows), 50)
-
-    def test_database_rejects_writes_and_table_functions(self):
-        for sql in ["INSERT INTO provinces (province_code) VALUES ('99')", "ALTER TABLE provinces DELETE WHERE 1", "DROP TABLE provinces"]:
-            with self.subTest(sql=sql):
-                self.assertFalse(self.ch.run(sql, safe=False).ok)
-        from unittest import mock
-        with mock.patch("t2sql.db.clickhouse.ast_check", return_value=set()):
-            res = self.run_as("admin", "SELECT * FROM url('http://127.0.0.1:8123/ping', LineAsString)")
-            self.assertEqual(res.error_code, "forbidden")
-        self.assertEqual(self.run_as("admin", "SELECT count() FROM provinces").rows[0][0], 63)
-
-    def test_pipeline_uses_einvoice_dataset(self):
-        llm = scripted(["SELECT count() FROM invoices FINAL WHERE toYYYYMM(issued_at) = 202506"])
-        pipe = TextToSQL(llm, "fewshot", db=EINVOICE_URL)
-        self.assertEqual(pipe.dataset.name, "einvoice")
-        ans = pipe.ask("Số hóa đơn lập trong tháng 6/2025", policy="analyst")
-        self.assertTrue(ans.result.ok, ans.result.error)
-        system, user_msg = llm.calls[0][0], llm.calls[0][1][0]["content"]
-        self.assertIn("FINAL", system)
-        self.assertIn("toTimeZone", system)
-        self.assertIn("ClickHouse", system)
-        self.assertIn("LIMIT N BY", system)
-        self.assertNotIn("contact_email", system)          # cột analyst không được đọc bị ẩn khỏi prompt
-        self.assertIn("FROM invoices", user_msg)            # few-shot của bộ einvoice
-        self.assertNotIn("strftime", user_msg)
-
-    @SLOW
-    def test_all_gold_and_fewshot_sql_run(self):
-        from t2sql import datasets
-        from t2sql.db import make_backend
-        ev = datasets.for_database("einvoice")
-        ch = make_backend(EINVOICE_URL, max_rows=100_000, timeout_s=60)
-        with open(ev.eval_path, encoding="utf-8") as f:
-            items = json.load(f)
-        with open(ev.fewshot_path, encoding="utf-8") as f:
-            items += json.load(f)
-        for it in items:
-            if it.get("sql"):
-                with self.subTest(q=it["question"]):
-                    res = ch.run(it["sql"], safe=False)
-                    self.assertTrue(res.ok, res.error)
-                    self.assertTrue(res.rows)
 
 
 if __name__ == "__main__":
