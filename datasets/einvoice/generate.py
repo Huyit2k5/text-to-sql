@@ -809,7 +809,7 @@ def month_count(idx, m, scale):
 
 def admin_client():
     import clickhouse_connect
-    url = os.environ.get("T2SQL_DATABASE_URL_CLICKHOUSE") or "clickhouse://x@127.0.0.1:8123/shop"
+    url = os.environ.get("T2SQL_DATABASE_URL_EINVOICE") or os.environ.get("T2SQL_DATABASE_URL") or "clickhouse://x@127.0.0.1:8123/einvoice"
     u = urlsplit(url)
     return clickhouse_connect.get_client(
         host=u.hostname or "127.0.0.1", port=u.port or 8123, secure=u.scheme == "clickhouses",

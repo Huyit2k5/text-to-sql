@@ -35,8 +35,8 @@ def normalize_value(v):
 
 
 class Backend:
-    dialect = "sqlite"            # tên dialect theo sqlglot
-    display_name = "SQLite"
+    dialect = "clickhouse"        # tên dialect theo sqlglot
+    display_name = "ClickHouse"
     database_name = None          # tên database, dùng để chọn bộ dữ liệu datasets/<tên>/
 
     def __init__(self, max_rows: int = 200, timeout_s: float = 5.0):

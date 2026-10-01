@@ -1,6 +1,5 @@
-"""Đọc schema từ SQLite và dựng chuỗi mô tả để đưa vào prompt."""
+"""Mô hình schema (bảng, cột, khóa) và dựng chuỗi mô tả để đưa vào prompt."""
 import json
-import sqlite3
 from dataclasses import dataclass, field
 
 # Cột văn bản tự do hoặc nhạy cảm: không đưa giá trị mẫu vào prompt
@@ -40,34 +39,6 @@ class Schema:
         self.concepts = concepts or {}   # khái niệm nghiệp vụ -> bảng cần dùng (cho schema linking)
         self.requires: dict[str, set[str]] = {}   # bảng -> bảng luôn phải đi kèm (từ docs "requires")
 
-    # ---------- nạp ----------
-    @classmethod
-    def from_db(cls, con: sqlite3.Connection, docs_path: str | None = None, n_samples: int = 3):
-        docs = {}
-        if docs_path:
-            with open(docs_path, encoding="utf-8") as f:
-                docs = json.load(f)
-        tdocs = docs.get("tables", {})
-        tables = {}
-        names = [r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-        for t in names:
-            fks = {r[3]: f"{r[2]}.{r[4]}" for r in con.execute(f'PRAGMA foreign_key_list("{t}")')}
-            cols = []
-            for _, cname, ctype, _, _, pk in con.execute(f'PRAGMA table_info("{t}")'):
-                col = Column(cname, ctype, bool(pk), fks.get(cname),
-                             tdocs.get(t, {}).get("columns", {}).get(cname, ""))
-                if (t, cname) not in NO_SAMPLE_COLUMNS and not pk and not col.fk:
-                    rows = con.execute(
-                        f'SELECT DISTINCT "{cname}" FROM "{t}" WHERE "{cname}" IS NOT NULL LIMIT 50').fetchall()
-                    vals = [r[0] for r in rows if not (isinstance(r[0], str) and len(r[0]) > MAX_SAMPLE_LEN)]
-                    col.samples = vals[:n_samples]
-                cols.append(col)
-            count = con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
-            tdoc = tdocs.get(t, {})
-            tables[t] = Table(t, cols, tdoc.get("description", ""), count, tdoc.get("keywords", ""))
-        return cls(tables, docs.get("business_rules", []), docs.get("concepts", {}))
-
     def subset(self, table_names):
         keep = {t: self.tables[t] for t in self.tables if t in set(table_names)}
         return Schema(keep, self.business_rules, self.concepts)
@@ -80,7 +51,7 @@ class Schema:
         return Schema(tables, self.business_rules, self.concepts)
 
     # ---------- hiển thị ----------
-    def render(self, with_docs: bool = False) -> str:
+    def render(self, with_docs: bool = False, rules: bool = True) -> str:
         """with_docs=False: chỉ tên bảng/cột/kiểu/khóa (baseline).
         with_docs=True: thêm mô tả nghiệp vụ, giá trị mẫu, quy tắc nghiệp vụ."""
         parts = []
@@ -106,7 +77,7 @@ class Schema:
                 lines.append(line)
             parts.append("\n".join(lines))
         text = "\n\n".join(parts)
-        if with_docs and self.business_rules:
+        if with_docs and rules and self.business_rules:
             text += "\n\nQUY TẮC NGHIỆP VỤ:\n" + "\n".join(f"- {r}" for r in self.business_rules)
         return text
 

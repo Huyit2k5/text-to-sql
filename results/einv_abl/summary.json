@@ -1,0 +1,341 @@
+{
+  "variants": [
+    "cold_conv",
+    "cold_snip"
+  ],
+  "labels": {
+    "shapecheck": "Trước cải tiến (kiểm tra hình dạng)",
+    "lookup": "+ Danh mục, gợi ý lỗi",
+    "costguard": "+ Chặn truy vấn nặng",
+    "verify": "+ Tự soát logic",
+    "reasoning": "+ Reasoning câu khó",
+    "norules": "Không quy tắc nghiệp vụ, không lịch sử",
+    "history": "Không quy tắc + tri thức từ lịch sử",
+    "rules_history": "Có quy tắc + tri thức từ lịch sử",
+    "cold": "Khởi đầu lạnh (không quy tắc, không few-shot)",
+    "cold_history": "Khởi đầu lạnh + tri thức từ lịch sử",
+    "cold_conv": "Khởi đầu lạnh + chỉ thống kê quy ước",
+    "cold_snip": "Khởi đầu lạnh + chỉ truy vấn minh họa"
+  },
+  "sets": {
+    "dev": {
+      "cold_conv": {
+        "n_runs": 2,
+        "ex_mean": 0.8275862068965517,
+        "ex_min": 0.8275862068965517,
+        "ex_max": 0.8275862068965517,
+        "ex_lenient_mean": 0.8620689655172413,
+        "by_difficulty": {
+          "easy": 0.9375,
+          "medium": 0.9772727272727273,
+          "hard": 0.575,
+          "unanswerable": 1.0
+        },
+        "calls_mean": 66.5,
+        "tok_in_mean": 248313,
+        "latency_ms_mean": 5008.729032258065,
+        "guard_mean": 0,
+        "verdicts_mean": 0,
+        "reasoning_mean": 0,
+        "runs": [
+          {
+            "run": 1,
+            "ex": 0.8275862068965517,
+            "ex_lenient": 0.8620689655172413,
+            "by_difficulty": {
+              "easy": 0.9375,
+              "medium": 0.9545454545454546,
+              "hard": 0.6,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 68,
+            "tok_in": 253584,
+            "latency_ms": 5892.195161290322,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "e04",
+              "h09",
+              "h10",
+              "h12",
+              "h15",
+              "h17",
+              "h18",
+              "h19",
+              "h20",
+              "m15"
+            ]
+          },
+          {
+            "run": 2,
+            "ex": 0.8275862068965517,
+            "ex_lenient": 0.8620689655172413,
+            "by_difficulty": {
+              "easy": 0.9375,
+              "medium": 1.0,
+              "hard": 0.55,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 65,
+            "tok_in": 243042,
+            "latency_ms": 4125.262903225806,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "e04",
+              "h02",
+              "h09",
+              "h10",
+              "h12",
+              "h15",
+              "h17",
+              "h18",
+              "h19",
+              "h20"
+            ]
+          }
+        ]
+      },
+      "cold_snip": {
+        "n_runs": 2,
+        "ex_mean": 0.7844827586206897,
+        "ex_min": 0.7758620689655172,
+        "ex_max": 0.7931034482758621,
+        "ex_lenient_mean": 0.8189655172413792,
+        "by_difficulty": {
+          "easy": 0.875,
+          "medium": 0.9090909090909091,
+          "hard": 0.575,
+          "unanswerable": 1.0
+        },
+        "calls_mean": 65.5,
+        "tok_in_mean": 236415.5,
+        "latency_ms_mean": 4147.308064516129,
+        "guard_mean": 0,
+        "verdicts_mean": 0,
+        "reasoning_mean": 0,
+        "runs": [
+          {
+            "run": 1,
+            "ex": 0.7931034482758621,
+            "ex_lenient": 0.8275862068965517,
+            "by_difficulty": {
+              "easy": 0.875,
+              "medium": 0.9090909090909091,
+              "hard": 0.6,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 65,
+            "tok_in": 234534,
+            "latency_ms": 4120.237096774194,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "e04",
+              "e12",
+              "h02",
+              "h04",
+              "h08",
+              "h10",
+              "h15",
+              "h18",
+              "h19",
+              "h20",
+              "m07",
+              "m15"
+            ]
+          },
+          {
+            "run": 2,
+            "ex": 0.7758620689655172,
+            "ex_lenient": 0.8103448275862069,
+            "by_difficulty": {
+              "easy": 0.875,
+              "medium": 0.9090909090909091,
+              "hard": 0.55,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 66,
+            "tok_in": 238297,
+            "latency_ms": 4174.379032258064,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "e04",
+              "e12",
+              "h01",
+              "h02",
+              "h04",
+              "h08",
+              "h10",
+              "h15",
+              "h18",
+              "h19",
+              "h20",
+              "m07",
+              "m15"
+            ]
+          }
+        ]
+      }
+    },
+    "holdout": {
+      "cold_conv": {
+        "n_runs": 2,
+        "ex_mean": 0.85,
+        "ex_min": 0.825,
+        "ex_max": 0.875,
+        "ex_lenient_mean": 0.85,
+        "by_difficulty": {
+          "easy": 1.0,
+          "medium": 0.8571428571428571,
+          "hard": 0.75,
+          "unanswerable": 1.0
+        },
+        "calls_mean": 48,
+        "tok_in_mean": 177616.5,
+        "latency_ms_mean": 6463.042045454546,
+        "guard_mean": 0,
+        "verdicts_mean": 0,
+        "reasoning_mean": 0,
+        "runs": [
+          {
+            "run": 1,
+            "ex": 0.875,
+            "ex_lenient": 0.875,
+            "by_difficulty": {
+              "easy": 1.0,
+              "medium": 0.8571428571428571,
+              "hard": 0.8125,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 50,
+            "tok_in": 188517,
+            "latency_ms": 5632.418181818181,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "x16",
+              "x23",
+              "x28",
+              "x29",
+              "x33"
+            ]
+          },
+          {
+            "run": 2,
+            "ex": 0.825,
+            "ex_lenient": 0.825,
+            "by_difficulty": {
+              "easy": 1.0,
+              "medium": 0.8571428571428571,
+              "hard": 0.6875,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 46,
+            "tok_in": 166716,
+            "latency_ms": 7293.665909090909,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "x16",
+              "x23",
+              "x26",
+              "x28",
+              "x29",
+              "x33",
+              "x34"
+            ]
+          }
+        ]
+      },
+      "cold_snip": {
+        "n_runs": 2,
+        "ex_mean": 0.825,
+        "ex_min": 0.825,
+        "ex_max": 0.825,
+        "ex_lenient_mean": 0.825,
+        "by_difficulty": {
+          "easy": 0.9,
+          "medium": 0.8571428571428571,
+          "hard": 0.75,
+          "unanswerable": 1.0
+        },
+        "calls_mean": 47,
+        "tok_in_mean": 166341,
+        "latency_ms_mean": 6939.338636363636,
+        "guard_mean": 0,
+        "verdicts_mean": 0,
+        "reasoning_mean": 0,
+        "runs": [
+          {
+            "run": 1,
+            "ex": 0.825,
+            "ex_lenient": 0.825,
+            "by_difficulty": {
+              "easy": 0.9,
+              "medium": 0.8571428571428571,
+              "hard": 0.75,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 47,
+            "tok_in": 169160,
+            "latency_ms": 7402.859090909091,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "x09",
+              "x16",
+              "x23",
+              "x26",
+              "x29",
+              "x33",
+              "x37"
+            ]
+          },
+          {
+            "run": 2,
+            "ex": 0.825,
+            "ex_lenient": 0.825,
+            "by_difficulty": {
+              "easy": 0.9,
+              "medium": 0.8571428571428571,
+              "hard": 0.75,
+              "unanswerable": 1.0
+            },
+            "refusal": 1.0,
+            "calls": 47,
+            "tok_in": 163522,
+            "latency_ms": 6475.818181818182,
+            "guard": 0,
+            "verdicts": 0,
+            "reasoning": 0,
+            "wrong": [
+              "x09",
+              "x16",
+              "x23",
+              "x26",
+              "x29",
+              "x33",
+              "x37"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

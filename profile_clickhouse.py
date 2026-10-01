@@ -10,8 +10,8 @@ riêng; sau đó đọc system.query_log (type = 'QueryFinish') và lấy trung 
   - Score      : Duration của SQL model / Duration của SQL chuẩn
 Truy vấn chạy bằng user chỉ đọc t2sql_admin; đọc query_log bằng user quản trị (CLICKHOUSE_USER / CLICKHOUSE_PASSWORD).
 
-  python profile_clickhouse.py              # đọc results/clickhouse/*.jsonl, ghi results/clickhouse/query_metrics.jsonl
-  python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"   # -> results/clickhouse_einvoice/
+  python profile_clickhouse.py              # đọc results/clickhouse_<bộ dữ liệu>/*.jsonl, ghi query_metrics.jsonl
+  python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"   # chọn database khác
 """
 import argparse
 import json
@@ -27,7 +27,22 @@ from t2sql import ROOT, datasets
 from t2sql.db.clickhouse import ClickHouseBackend
 from t2sql.dialect import example_sql
 from t2sql.safety import POLICIES
-from profile_queries import status_of
+
+SLOW_SCORE = 2.0        # chậm hơn SQL chuẩn quá 2 lần ...
+SLOW_MIN_MS = 20.0      # ... và mất trên 20 ms thì đánh dấu "Chậm"
+SLOW_ABS_MS = 1000.0    # hoặc trên 1 giây
+
+
+def status_of(rec, m, gold_m):
+    if not m or not m["ok"]:
+        return "Lỗi"
+    if not rec["correct"]:
+        return "Sai kết quả"
+    score = m.get("score")
+    if m["duration_ms"] > SLOW_ABS_MS or (score and score > SLOW_SCORE and m["exec_ms"] > SLOW_MIN_MS):
+        return "Chậm"
+    return "Normal"
+
 
 CONFIG_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect", "shapecheck", "consistency", "robust"]
 
@@ -96,22 +111,22 @@ class Profiler:
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--results", default=None, help="mặc định results/clickhouse (shop) hoặc results/clickhouse_<tên bộ dữ liệu>")
-    ap.add_argument("--db", default=os.environ.get("T2SQL_DATABASE_URL_CLICKHOUSE"))
+    ap.add_argument("--results", default=None, help="mặc định results/clickhouse_<tên bộ dữ liệu>")
+    ap.add_argument("--db", default=os.environ.get("T2SQL_DATABASE_URL"))
     ap.add_argument("--repeat", type=int, default=3)
     args = ap.parse_args()
     if not (args.db or "").startswith("clickhouse"):
-        sys.exit("Cần T2SQL_DATABASE_URL_CLICKHOUSE (hoặc --db clickhouse://...).")
+        sys.exit("Cần T2SQL_DATABASE_URL (hoặc --db clickhouse://...).")
 
     prof = Profiler(args.db, args.repeat)
     ds = datasets.for_backend(prof.backend)
-    args.results = args.results or os.path.join(ROOT, "results", "clickhouse" if ds.name == "shop" else f"clickhouse_{ds.name}")
+    args.results = args.results or os.path.join(ROOT, "results", f"clickhouse_{ds.name}")
     with open(ds.eval_path, encoding="utf-8") as f:
         items = {it["id"]: it for it in json.load(f)}
     print(f"ClickHouse {prof.server} tại {prof.backend.host}:{prof.backend.port}, bộ dữ liệu {ds.name}, "
           f"đo {args.repeat} lần/câu", flush=True)
 
-    gold_sql = {iid: example_sql(it, "clickhouse", source=ds.sql_dialect) for iid, it in items.items() if it.get("sql")}
+    gold_sql = {iid: example_sql(it) for iid, it in items.items() if it.get("sql")}
     records = []
     for cfg in CONFIG_ORDER:
         path = os.path.join(args.results, f"{cfg}.jsonl")

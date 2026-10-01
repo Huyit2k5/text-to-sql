@@ -18,8 +18,13 @@ SETS = {"dev": "datasets/einvoice/eval.json", "holdout": "datasets/einvoice/eval
 # "reasoning" (bật reasoning cho câu khó) vẫn chạy được qua --variants, nhưng mặc định bỏ vì chậm ~10 lần.
 VARIANTS = ["shapecheck", "lookup", "costguard", "verify"]
 LABELS = {"shapecheck": "Trước cải tiến (kiểm tra hình dạng)", "lookup": "+ Danh mục, gợi ý lỗi",
-          "costguard": "+ Chặn truy vấn nặng", "verify": "+ Tự soát logic", "reasoning": "+ Reasoning câu khó"}
-OUT = os.path.join(ROOT, "results", "einv_exp")
+          "costguard": "+ Chặn truy vấn nặng", "verify": "+ Tự soát logic", "reasoning": "+ Reasoning câu khó",
+          "norules": "Không quy tắc nghiệp vụ, không lịch sử", "history": "Không quy tắc + tri thức từ lịch sử",
+          "rules_history": "Có quy tắc + tri thức từ lịch sử",
+          "cold": "Khởi đầu lạnh (không quy tắc, không few-shot)",
+          "cold_history": "Khởi đầu lạnh + tri thức từ lịch sử",
+          "cold_conv": "Khởi đầu lạnh + chỉ thống kê quy ước", "cold_snip": "Khởi đầu lạnh + chỉ truy vấn minh họa"}
+OUT = os.path.join(ROOT, "results", "einv_exp")     # đổi bằng --tag
 
 
 def run_dir(set_name, k):
@@ -33,11 +38,12 @@ def read_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def summarize(runs):
-    out = {"variants": VARIANTS, "labels": LABELS, "sets": {}}
+def summarize(runs, variants=None):
+    variants = variants or VARIANTS
+    out = {"variants": variants, "labels": LABELS, "sets": {}}
     for set_name in SETS:
         per_variant = {}
-        for v in VARIANTS:
+        for v in variants:
             rows = []
             for k in range(1, runs + 1):
                 d = run_dir(set_name, k)
@@ -102,8 +108,12 @@ def main():
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--start", type=int, default=1, help="bắt đầu từ lượt số mấy (chạy tiếp khi bị dừng giữa chừng)")
     ap.add_argument("--variants", nargs="+", default=VARIANTS)
+    ap.add_argument("--tag", default=None, help="ghi vào results/einv_<tag>/ thay vì results/einv_exp/")
     ap.add_argument("--summarize-only", action="store_true")
     args = ap.parse_args()
+    global OUT
+    if args.tag:
+        OUT = os.path.join(ROOT, "results", f"einv_{args.tag}")
     if not args.summarize_only:
         for k in range(args.start, args.runs + 1):
             for set_name, path in SETS.items():
@@ -112,7 +122,7 @@ def main():
                 cmd = [sys.executable, "evaluate.py", "--db", args.db, "--dataset", path, "--out", out,
                        "--configs", *args.variants, "--resume"]
                 subprocess.run(cmd, cwd=ROOT, check=True, env=dict(os.environ, PYTHONUTF8="1"))
-    s = summarize(args.runs)
+    s = summarize(args.runs, args.variants)
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(s, f, ensure_ascii=False, indent=2)

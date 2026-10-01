@@ -12,35 +12,22 @@ from t2sql.viz import choose_view
 
 st.set_page_config(page_title="Text-to-SQL", page_icon="🗄️", layout="wide")
 
-EXAMPLES = [
-    "Doanh thu theo từng tháng trong năm 2025",
-    "Top 5 sản phẩm có doanh thu cao nhất",
-    "Còn năm 2024 thì sao?",
-    "Sản phẩm nào tốt nhất?",
-    "Liệt kê email của khách VIP",
-    "Xóa các đơn hàng bị hủy",
-]
+EXAMPLES = ["Có bao nhiêu bản ghi trong bảng lớn nhất?", "Còn năm ngoái thì sao?", "Xóa toàn bộ dữ liệu"]   # khi bộ dữ liệu không khai báo example_questions
 
 
 def database_choices():
     """T2SQL_DATABASE_URL (mặc định) + các T2SQL_DATABASE_URL_<TÊN> khác, ví dụ _CLICKHOUSE."""
-    names = {"postgres": "PostgreSQL", "postgresql": "PostgreSQL", "clickhouse": "ClickHouse",
-             "clickhouses": "ClickHouse", "clickhouse+https": "ClickHouse", "sqlite": "SQLite"}
-
     def label(url):
-        if "://" not in url:
-            return "SQLite · shop"
-        kind = names.get(url.split("://", 1)[0].lower(), url.split("://", 1)[0])
         db = url.rsplit("/", 1)[-1].split("?", 1)[0]
-        return f"{kind} · {db}" if db else kind
+        return f"ClickHouse · {db}" if db else "ClickHouse"
 
-    main = os.environ.get("T2SQL_DATABASE_URL", "").strip()
-    out = {label(main): main}
-    for k, v in sorted(os.environ.items()):
-        if k.startswith("T2SQL_DATABASE_URL_") and k != "T2SQL_DATABASE_URL_DOCKER" and v.strip():
-            name = label(v.strip())
-            out[name if name not in out else k.removeprefix("T2SQL_DATABASE_URL_").title()] = v.strip()
-    return out
+    urls = [os.environ.get("T2SQL_DATABASE_URL", "").strip()]
+    urls += [v.strip() for k, v in sorted(os.environ.items()) if k.startswith("T2SQL_DATABASE_URL_") and v.strip()]
+    out = {}
+    for u in urls:
+        if u and u not in out.values():
+            out.setdefault(label(u), u)
+    return out or {"(chưa cấu hình T2SQL_DATABASE_URL)": ""}
 
 
 @st.cache_resource
@@ -75,7 +62,7 @@ with st.sidebar:
     st.session_state.db_label = db_label
     st.markdown("**Thử hỏi:**\n" + "\n".join(f"- {e}" for e in (pipe.dataset.example_questions or EXAMPLES)))
 
-st.title(pipe.dataset.docs.get("title") or "Hỏi dữ liệu bán hàng bằng tiếng Việt")
+st.title(pipe.dataset.docs.get("title") or "Hỏi dữ liệu bằng tiếng Việt")
 st.session_state.setdefault("turns", [])
 st.session_state.setdefault("history", [])
 st.sidebar.caption(f"Database: {pipe.backend.describe()} · Model: {getattr(pipe.llm, 'model', '?')}")

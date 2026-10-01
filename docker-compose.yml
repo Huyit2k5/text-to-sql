@@ -1,38 +1,17 @@
-# Text-to-SQL: PostgreSQL + ClickHouse (demo) + app Streamlit.
+# Text-to-SQL: ClickHouse + app Streamlit.
 #
 #   docker compose up -d --build          # chạy, mở http://localhost:8501 (chọn Database trong sidebar)
-#   docker compose run --rm app python evaluate.py --configs all   # chấm điểm trên Postgres
+#   docker compose exec app python evaluate.py --configs all      # chấm điểm trên database mặc định
 #   docker compose down                   # dừng (giữ dữ liệu);  down -v để xóa luôn dữ liệu
 #
-# Cấu hình lấy từ file .env (xem .env.example): LLM_*, T2SQL_*, POSTGRES_PASSWORD, T2SQL_APP_PASSWORD.
-# Muốn dùng Postgres có sẵn của công ty: đặt T2SQL_DATABASE_URL trong .env trỏ tới DB đó,
-# áp dụng docker/postgres/roles.sql bên DB đó, rồi chỉ chạy `docker compose up -d --build app`.
+# Cấu hình lấy từ file .env (xem .env.example): LLM_*, T2SQL_*, CLICKHOUSE_PASSWORD, T2SQL_CH_PASSWORD.
+# Dữ liệu demo (database einvoice, ~100 triệu dòng) sinh riêng bằng: python datasets/einvoice/generate.py
+# Muốn dùng ClickHouse có sẵn của công ty: đặt T2SQL_DATABASE_URL_DOCKER trong .env trỏ tới đó, áp dụng
+# docker/clickhouse/sql/03_access.sql (sửa tên database / bảng / cột) rồi chỉ chạy `docker compose up -d --build app`.
 
 name: text-to-sql
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-shop}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
-      T2SQL_APP_PASSWORD: ${T2SQL_APP_PASSWORD:?Đặt T2SQL_APP_PASSWORD trong .env}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Chỉ chạy khi volume còn trống (lần đầu). Đổi dữ liệu mẫu: docker compose down -v
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"   # chỉ mở cho máy local, để chạy CLI/evaluate ngoài Docker
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  # ClickHouse demo (cùng dữ liệu shop). Chạy riêng:  docker compose up -d clickhouse
-  # Chấm điểm:  python evaluate.py --db "$T2SQL_DATABASE_URL_CLICKHOUSE" --configs robust
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     restart: unless-stopped
@@ -44,6 +23,7 @@ services:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - chdata:/var/lib/clickhouse
+      # Chỉ chạy khi thư mục dữ liệu còn trống (lần đầu). Đổi dữ liệu mẫu: docker compose down -v
       - ./docker/clickhouse/init:/docker-entrypoint-initdb.d:ro
       - ./docker/clickhouse/sql:/t2sql/sql:ro
       - ./docker/clickhouse/config.d/t2sql.xml:/etc/clickhouse-server/config.d/t2sql.xml:ro
@@ -63,10 +43,9 @@ services:
     env_file: .env
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}   # giờ trong log / kết quả đánh giá
-      # Ghi đè URL trong .env: bên trong mạng Docker, Postgres có tên host là "db".
-      T2SQL_DATABASE_URL: ${T2SQL_DATABASE_URL_DOCKER:-postgresql://t2sql_app:${T2SQL_APP_PASSWORD}@db:5432/${POSTGRES_DB:-shop}}
-      # Database thứ hai để chọn trong sidebar của app (host "clickhouse" trong mạng Docker).
-      T2SQL_DATABASE_URL_CLICKHOUSE: clickhouse://t2sql:${T2SQL_CH_PASSWORD:-}@clickhouse:8123/shop
+      # Ghi đè URL trong .env: bên trong mạng Docker, ClickHouse có tên host là "clickhouse".
+      T2SQL_DATABASE_URL: ${T2SQL_DATABASE_URL_DOCKER:-clickhouse://t2sql:${T2SQL_CH_PASSWORD:-}@clickhouse:8123/einvoice}
+      # Database chọn trong sidebar của app (thêm database khác: đặt thêm biến T2SQL_DATABASE_URL_<TÊN>).
       T2SQL_DATABASE_URL_EINVOICE: clickhouse://t2sql:${T2SQL_CH_PASSWORD:-}@clickhouse:8123/einvoice
     ports:
       - "${APP_PORT:-8501}:8501"
@@ -74,9 +53,8 @@ services:
       - ./logs:/app/logs          # log truy vấn + phản hồi người dùng
       - ./results:/app/results    # kết quả evaluate.py
     depends_on:
-      db:
+      clickhouse:
         condition: service_healthy
 
 volumes:
-  pgdata:
   chdata:

@@ -4,7 +4,7 @@ import re
 CANNOT = "CANNOT_ANSWER"
 CLARIFY = "CLARIFY"
 
-_FENCE = re.compile(r"```(?:sql|sqlite)?\s*(.*?)```", re.S | re.I)
+_FENCE = re.compile(r"```(?:sql|clickhouse)?\s*(.*?)```", re.S | re.I)
 _SQL_START = re.compile(r"\b(WITH|SELECT)\b", re.I)
 
 

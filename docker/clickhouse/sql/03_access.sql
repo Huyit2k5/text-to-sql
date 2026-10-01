@@ -1,6 +1,7 @@
 -- User / role cho Text-to-SQL trên ClickHouse. Chạy bởi docker/clickhouse/init/01_init.sh,
 -- __T2SQL_CH_PASSWORD__ được thay bằng biến môi trường T2SQL_CH_PASSWORD.
--- Áp dụng cho ClickHouse thật: đổi tên database `shop`, danh sách bảng/cột và mật khẩu rồi chạy bằng user quản trị.
+-- File này chỉ tạo profile, role và user; quyền đọc bảng nào cấp riêng cho từng database
+-- (ví dụ datasets/einvoice/access.sql, chạy bởi generate.py). Áp dụng cho ClickHouse thật: đổi mật khẩu rồi chạy bằng user quản trị.
 --
 -- Mỗi vai trò của app là một user riêng (t2sql_admin / t2sql_analyst / t2sql_sales), backend chọn user
 -- theo vai trò đang dùng. Cả ba dùng chung profile t2sql_ro:
@@ -24,26 +25,12 @@ CREATE ROLE OR REPLACE t2sql_admin_ro;
 CREATE ROLE OR REPLACE t2sql_analyst_ro;
 CREATE ROLE OR REPLACE t2sql_sales_ro;
 
-GRANT SELECT ON shop.* TO t2sql_admin_ro;
-
-GRANT SELECT ON shop.suppliers TO t2sql_analyst_ro;
-GRANT SELECT ON shop.products TO t2sql_analyst_ro;
-GRANT SELECT ON shop.orders TO t2sql_analyst_ro;
-GRANT SELECT ON shop.order_items TO t2sql_analyst_ro;
-GRANT SELECT ON shop.reviews TO t2sql_analyst_ro;
-GRANT SELECT(customer_id, name, city, segment, created_at) ON shop.customers TO t2sql_analyst_ro;
-
-GRANT SELECT ON shop.orders TO t2sql_sales_ro;
-GRANT SELECT ON shop.order_items TO t2sql_sales_ro;
-GRANT SELECT ON shop.products TO t2sql_sales_ro;
-GRANT SELECT ON shop.suppliers TO t2sql_sales_ro;
-
 CREATE USER OR REPLACE t2sql_admin IDENTIFIED WITH sha256_password BY '__T2SQL_CH_PASSWORD__'
-    DEFAULT DATABASE shop SETTINGS PROFILE 't2sql_ro';
+    SETTINGS PROFILE 't2sql_ro';
 CREATE USER OR REPLACE t2sql_analyst IDENTIFIED WITH sha256_password BY '__T2SQL_CH_PASSWORD__'
-    DEFAULT DATABASE shop SETTINGS PROFILE 't2sql_ro';
+    SETTINGS PROFILE 't2sql_ro';
 CREATE USER OR REPLACE t2sql_sales IDENTIFIED WITH sha256_password BY '__T2SQL_CH_PASSWORD__'
-    DEFAULT DATABASE shop SETTINGS PROFILE 't2sql_ro';
+    SETTINGS PROFILE 't2sql_ro';
 
 GRANT t2sql_admin_ro TO t2sql_admin;
 GRANT t2sql_analyst_ro TO t2sql_analyst;

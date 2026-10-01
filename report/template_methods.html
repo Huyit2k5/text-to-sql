@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>So sánh phương pháp Text-to-SQL</title>
+<meta name="description" content="So sánh độ chính xác và chi phí của các phương pháp Text-to-SQL trên ClickHouse einvoice, tập trung vào tri thức khai thác từ lịch sử truy vấn.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Một cột: tóm tắt -> toàn cảnh -> lịch sử truy vấn -> bảng chi tiết -> độ tin cậy -> khuyến nghị.
+   Dark-first, light là bộ màu chọn riêng. Dev = xanh, held-out = cam (cố định, không đổi theo thứ hạng). */
+:root {
+  color-scheme: dark;
+  --bg: #0f1216; --panel: #161a20; --panel-2: #1c2129; --line: #262c35; --line-strong: #343c48;
+  --fg: #e7eaef; --fg-2: #b4bcc7; --muted: #7f8896; --accent: #5fa8f2;
+  --dev: #3987e5; --hold: #d95926; --track: #232a33;
+  --good-ink: #4cc94c; --warn-ink: #f5b73b; --crit-ink: #f07373;
+  --row-hover: #1e242d; --code-bg: #11151a;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f4f6f8; --panel: #ffffff; --panel-2: #f8f9fb; --line: #dfe3e8; --line-strong: #c9cfd7;
+    --fg: #12161b; --fg-2: #3c4450; --muted: #66707d; --accent: #1f6fc9;
+    --dev: #2a78d6; --hold: #eb6834; --track: #e9edf1;
+    --good-ink: #0a7a0a; --warn-ink: #9a6300; --crit-ink: #b42b2b; --row-hover: #f0f4f9; --code-bg: #f3f5f8;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f8; --panel: #ffffff; --panel-2: #f8f9fb; --line: #dfe3e8; --line-strong: #c9cfd7;
+  --fg: #12161b; --fg-2: #3c4450; --muted: #66707d; --accent: #1f6fc9;
+  --dev: #2a78d6; --hold: #eb6834; --track: #e9edf1;
+  --good-ink: #0a7a0a; --warn-ink: #9a6300; --crit-ink: #b42b2b; --row-hover: #f0f4f9; --code-bg: #f3f5f8;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.55 var(--font-body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); }
+.wrap > *, .panel-body > * { min-width: 0; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(24px, 3.4vw, 32px); line-height: 1.15; } h2 { font-size: 18px; } h3 { font-size: 15px; }
+p { margin: 0; } code { font-family: var(--font-data); font-size: 12.5px; }
+.muted { color: var(--muted); } .small { font-size: 12.5px; }
+.eyebrow { font: 500 11px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+header.top { display: grid; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.toprow { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--fg-2); font-size: 13px; }
+.meta b { color: var(--fg); font-weight: 500; }
+button.theme { background: var(--panel); color: var(--fg-2); border: 1px solid var(--line-strong); border-radius: 6px; font: 500 12px var(--font-body); padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.panel-head .hint { color: var(--muted); font-size: 12.5px; }
+.panel-body { padding: 14px 16px 16px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.kpi .v { font: 600 28px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.kpi .v small { font: 500 14px var(--font-body); color: var(--muted); margin-left: 4px; }
+.kpi .s { color: var(--fg-2); font-size: 12.5px; }
+ul.find { margin: 0; padding-left: 18px; display: grid; gap: 9px; color: var(--fg-2); }
+ul.find b { color: var(--fg); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--fg-2); margin-bottom: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.legend .wh { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--fg-2); margin-right: 6px; vertical-align: 3px; }
+
+/* thanh so sánh */
+.fam { font: 500 11px/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 16px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.fam:first-child { padding-top: 0; }
+.row { display: grid; grid-template-columns: minmax(150px, 34%) minmax(0, 1fr); gap: 10px 16px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.row:hover { background: var(--row-hover); }
+.row .lab { font-size: 13px; color: var(--fg); line-height: 1.3; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tag { font: 500 10.5px var(--font-body); color: var(--fg-2); border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 7px; line-height: 17px; white-space: nowrap; }
+.tag.log { color: var(--accent); border-color: var(--accent); }
+.bars { display: grid; gap: 5px; }
+.bl { display: grid; grid-template-columns: 52px minmax(0, 1fr) 84px; gap: 8px; align-items: center; }
+.bl .k { font: 500 11px var(--font-data); color: var(--muted); }
+.track { position: relative; height: 14px; background: var(--track); border-radius: 3px; }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+.fill.dev { background: var(--dev); } .fill.hold { background: var(--hold); }
+.whisk { position: absolute; top: 50%; height: 0; border-top: 2px solid var(--fg); opacity: .85; }
+.whisk::before, .whisk::after { content: ""; position: absolute; top: -5px; height: 8px; border-left: 2px solid var(--fg); }
+.whisk::before { left: 0; } .whisk::after { right: 0; }
+.val { font: 500 12px var(--font-data); color: var(--fg); white-space: nowrap; text-align: right; }
+.val small { display: block; font: 400 10.5px var(--font-body); color: var(--muted); }
+.na { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font: 12px var(--font-body); color: var(--muted); }
+.ref { position: absolute; top: -3px; bottom: -3px; border-left: 2px dashed var(--good-ink); }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; color: var(--fg); box-shadow: 0 6px 20px rgba(0,0,0,.25); max-width: 320px; display: none; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px var(--font-body); color: var(--muted); white-space: nowrap; background: var(--panel); }
+td.first { min-width: 300px; max-width: 380px; }
+td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--font-data); font-size: 12.5px; }
+tbody tr:hover { background: var(--row-hover); }
+tr.famrow td { font: 500 11px var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--panel-2); }
+.best { color: var(--good-ink); font-weight: 600; } .worse { color: var(--crit-ink); }
+.callout { border-left: 3px solid var(--warn-ink); background: var(--panel-2); padding: 10px 14px; border-radius: 0 6px 6px 0; color: var(--fg-2); }
+.callout b { color: var(--fg); }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 9px; color: var(--fg-2); }
+ol.steps b { color: var(--fg); }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .wrap { padding-inline: 16px; } .kpis { grid-template-columns: 1fr; } .toprow { flex-direction: column; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="toprow">
+      <div style="display:grid;gap:8px">
+        <span class="eyebrow">Báo cáo thực nghiệm · ClickHouse einvoice</span>
+        <h1>So sánh các phương pháp Text-to-SQL, tập trung vào tri thức khai thác từ lịch sử truy vấn</h1>
+      </div>
+      <button class="theme" id="theme" type="button">Đổi giao diện sáng / tối</button>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Kết luận</h2></div>
+    <div class="panel-body"><ul class="find" id="findings"></ul></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Toàn cảnh: độ chính xác của mọi phương pháp</h2><span class="hint">execution accuracy · vạch ngang = khoảng min - max giữa các lượt chạy</span></div>
+    <div class="panel-body">
+      <div class="legend"><span><i style="background:var(--dev)"></i>Bộ dev (58 câu có đáp án)</span><span><i style="background:var(--hold)"></i>Bộ held-out (40 câu, viết trước khi chạy model)</span><span><span class="wh"></span>min - max giữa các lượt</span></div>
+      <div id="chart-all"></div>
+    </div>
+  </section>
+
+  <section class="two">
+    <div class="panel">
+      <div class="panel-head"><h2>Database mới, chưa có gì</h2><span class="hint">không quy tắc viết tay, không few-shot</span></div>
+      <div class="panel-body">
+        <p class="small muted" style="margin-bottom:10px">Vạch xanh đứt là mức khi có đủ quy tắc viết tay (bộ dev / held-out tương ứng).</p>
+        <div id="chart-cold"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Khi đã có few-shot</h2><span class="hint">có few-shot đã duyệt, không quy tắc viết tay</span></div>
+      <div class="panel-body">
+        <p class="small muted" style="margin-bottom:10px">Lịch sử chỉ thêm ít vì few-shot đã mang sẵn quy ước.</p>
+        <div id="chart-fewshot"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Chi tiết từng phương pháp</h2><span class="hint">trung bình các lượt · dễ / trung bình / khó</span></div>
+    <div class="panel-body scroll"><table id="detail"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Độ tin cậy của số liệu</h2></div>
+    <div class="panel-body" style="display:grid;gap:14px">
+      <div class="callout" id="rejudge"></div>
+      <ul class="find" id="validity"></ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Khuyến nghị</h2></div>
+    <div class="panel-body"><ol class="steps" id="recs"></ol></div>
+  </section>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pct = (x, d = 1) => x == null ? "–" : (100 * x).toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
+const num = (x, d = 0) => x == null ? "–" : Number(x).toLocaleString("vi-VN", { maximumFractionDigits: d, minimumFractionDigits: d });
+const pts = (x) => `${x >= 0 ? "+" : "−"}${num(Math.abs(100 * x), 1)} điểm`;
+const M = Object.fromEntries(DATA.methods.map((m) => [m.id, m]));
+const tip = $("#tip");
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = "block"; moveTip(e); }
+function moveTip(e) { tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+function hideTip() { tip.style.display = "none"; }
+$("#theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  document.documentElement.dataset.theme = cur === "light" ? "dark" : "light";
+};
+
+// ---------------------------------------------------------------- các con số dùng nhiều lần
+const g = (id, set) => M[id]?.[set]?.mean;
+const cold = { dev: g("cold", "dev"), hold: g("cold", "holdout") };
+const coldH = { dev: g("cold_history", "dev"), hold: g("cold_history", "holdout") };
+const full = { dev: g("lookup", "dev"), hold: g("lookup", "holdout") };
+const closed = (set) => (coldH[set] - cold[set]) / (full[set] - cold[set]);
+const nRunsMin = Math.min(...DATA.methods.flatMap((m) => ["dev", "holdout"].map((s) => m[s]?.n_runs).filter(Boolean)));
+const ranges = DATA.methods.flatMap((m) => ["dev", "holdout"].map((s) => m[s] && m[s].n_runs > 1 ? m[s].max - m[s].min : 0));
+
+$("#meta").innerHTML = [
+  ["Dữ liệu", "ClickHouse 25.8, database einvoice (~220 triệu dòng, 15 bảng)"],
+  ["Model", "SDS-AI/softdream tự host, reasoning tắt, temperature 0"],
+  ["Số phương pháp", `${DATA.methods.filter((m) => m.dev || m.holdout).length} đã đo`],
+  ["Dựng lúc", DATA.generated],
+].map(([k, v]) => `<span>${k}: <b>${esc(v)}</b></span>`).join("");
+
+$("#kpis").innerHTML = [
+  [pct(coldH.hold), "Khởi đầu lạnh + lịch sử · held-out", `so với ${pct(cold.hold)} khi không có lịch sử (${pts(coldH.hold - cold.hold)})`],
+  [pct(coldH.dev), "Khởi đầu lạnh + lịch sử · dev", `so với ${pct(cold.dev)} khi không có lịch sử (${pts(coldH.dev - cold.dev)})`],
+  [`${num(100 * (closed("dev") + closed("hold")) / 2, 0)}<small>%</small>`, "Khoảng cách tới bộ quy tắc viết tay đã thu hẹp", `dev ${num(100 * closed("dev"), 0)}% · held-out ${num(100 * closed("hold"), 0)}%`],
+  [pct(full.hold), "Đủ quy tắc viết tay · held-out", `vẫn cao nhất; dev ${pct(full.dev)}`],
+].map(([v, l, s]) => `<div class="panel kpi"><span class="eyebrow">${l}</span><span class="v">${v}</span><span class="s">${s}</span></div>`).join("");
+
+// ---------------------------------------------------------------- kết luận (tính từ số liệu)
+const v = M.verify, cg = M.costguard, conv = M.cold_conv, snip = M.cold_snip;
+$("#findings").innerHTML = [
+  `<b>Quy tắc nghiệp vụ viết tay vẫn cho kết quả tốt nhất:</b> ${pct(full.dev)} ở dev và ${pct(full.hold)} ở held-out. Chưa phương pháp nào vượt được mức này.`,
+  `<b>Lịch sử truy vấn thay được khoảng ${num(100 * (closed("dev") + closed("hold")) / 2, 0)}% khoảng cách</b> khi database mới chưa có quy tắc và few-shot:
+   ${pct(cold.dev)} → ${pct(coldH.dev)} ở dev, ${pct(cold.hold)} → ${pct(coldH.hold)} ở held-out. Đây là cách giảm việc viết tay lúc mới triển khai, không thay hẳn được (còn kém ${num(100 * (full.dev - coldH.dev), 1)} điểm ở dev, ${num(100 * (full.hold - coldH.hold), 1)} điểm ở held-out).`,
+  `<b>Phần lớn lợi ích đến từ thống kê quy ước, không phải từ chép câu SQL mẫu:</b> chỉ thống kê quy ước đạt ${pct(conv.dev.mean)} / ${pct(conv.holdout.mean)} (dev / held-out),
+   chỉ truy vấn minh họa đạt ${pct(snip.dev.mean)} / ${pct(snip.holdout.mean)}, dùng cả hai đạt ${pct(coldH.dev)} / ${pct(coldH.hold)}. Kết quả này ít bị nghi ngờ "rò đáp án" hơn.`,
+  `<b>Khi đã có few-shot đã duyệt, lịch sử chỉ thêm ít:</b> ${pct(g("norules", "dev"))} → ${pct(g("history", "dev"))} ở dev (không đổi), ${pct(g("norules", "holdout"))} → ${pct(g("history", "holdout"))} ở held-out (${pts(g("history", "holdout") - g("norules", "holdout"))}, tương đương 1-2 câu).`,
+  `<b>Model tự soát logic không đáng dùng:</b> tốn gấp đôi lời gọi (${num(v.dev.calls)} so với ${num(cg.dev.calls)}); dev giảm từ ${pct(cg.dev.mean)} xuống ${pct(v.dev.mean)} (${num(v.dev.verdicts)} câu bị báo sai),
+   held-out lại tăng ${pts(v.holdout.mean - cg.holdout.mean)}. Kết quả không ổn định, chỉ có 1 lượt.`,
+  `<b>Chặn truy vấn nặng không làm tăng độ chính xác</b> (dev ${pct(cg.dev.mean)}, đúng bằng dòng trước), giá trị của nó là bảo vệ hệ thống khỏi truy vấn quét quá nhiều dòng; nó chỉ kích hoạt ${num(cg.dev.guard)} lần ở dev, ${num(cg.holdout.guard)} lần ở held-out.`,
+].map((s) => `<li>${s}</li>`).join("");
+
+// ---------------------------------------------------------------- thanh so sánh
+function tagsHtml(m) { return m.needs.length ? m.needs.map((t) => `<span class="tag ${t === "log" ? "log" : ""}">${DATA.tags[t]}</span>`).join("") : `<span class="tag">Chỉ schema</span>`; }
+function tipFor(m, set, label) {
+  const s = m[set];
+  if (!s) return `<b>${esc(m.label)}</b><br>${label}: chưa đo`;
+  const bd = s.by_diff || {};
+  return `<b>${esc(m.label)}</b><br>${label}: ${pct(s.mean)} (${s.n_runs} lượt${s.n_runs > 1 ? `, ${pct(s.min)} - ${pct(s.max)}` : ""})<br>Dễ ${pct(bd.easy, 0)} · TB ${pct(bd.medium, 0)} · Khó ${pct(bd.hard, 0)}<br>Lời gọi LLM ${num(s.calls)} · độ trễ ${num(s.latency_ms / 1000, 1)} s<br><span class="muted">${esc(m.desc)}</span>`;
+}
+function barLine(m, set, cls, label, refs) {
+  const s = m[set];
+  const ref = refs && refs[set] != null ? `<i class="ref" style="left:${100 * refs[set]}%" title="đủ quy tắc viết tay"></i>` : "";
+  if (!s) return `<div class="bl"><span class="k">${label}</span><div class="track"><span class="na">chưa đo</span></div><span class="val muted">–</span></div>`;
+  const w = 100 * s.mean;
+  const whisk = s.n_runs > 1 && s.max - s.min >= 0.001 ? `<span class="whisk" style="left:${100 * s.min}%;width:${100 * (s.max - s.min)}%"></span>` : "";
+  const note = s.n_runs < 2 ? "1 lượt" : (s.max - s.min < 0.001 ? `${s.n_runs} lượt như nhau` : `${pct(s.min, 0)}-${pct(s.max, 0)}`);
+  return `<div class="bl" data-tip="${esc(tipFor(m, set, label))}"><span class="k">${label}</span><div class="track">${ref}<div class="fill ${cls}" style="width:${w}%"></div>${whisk}</div>
+    <span class="val">${pct(s.mean)}<small>${note}</small></span></div>`;
+}
+function chart(el, ids, opts = {}) {
+  let html = "", lastFam = null;
+  ids.forEach((id) => {
+    const m = M[id];
+    if (opts.families && m.family !== lastFam) { html += `<div class="fam">${DATA.families[m.family]}</div>`; lastFam = m.family; }
+    html += `<div class="row"><div class="lab">${esc(m.label)}<div class="tags">${tagsHtml(m)}</div></div>
+      <div class="bars">${barLine(m, "dev", "dev", "Dev", opts.refs)}${barLine(m, "holdout", "hold", "Held-out", opts.refs)}</div></div>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll("[data-tip]").forEach((n) => { n.onmousemove = (e) => showTip(e, n.dataset.tip); n.onmouseleave = hideTip; });
+}
+chart($("#chart-all"), DATA.methods.map((m) => m.id), { families: true });
+const refs = { dev: full.dev, holdout: full.hold };
+chart($("#chart-cold"), ["cold", "cold_snip", "cold_conv", "cold_history"], { refs });
+chart($("#chart-fewshot"), ["norules", "history", "rules_history"], { refs });
+
+// ---------------------------------------------------------------- bảng chi tiết
+const cell = (s) => !s ? '<span class="muted">chưa đo</span>' : `${pct(s.mean)}<div class="small muted" style="font-family:var(--font-body)">${s.n_runs < 2 ? "1 lượt" : (s.max - s.min < 0.001 ? `${s.n_runs} lượt như nhau` : `${pct(s.min, 0)}-${pct(s.max, 0)}`)}</div>`;
+const dif = (s) => !s ? "–" : `${pct(s.by_diff.easy, 0)} / ${pct(s.by_diff.medium, 0)} / ${pct(s.by_diff.hard, 0)}`;
+const bestDev = Math.max(...DATA.methods.map((m) => m.dev?.mean ?? 0)), bestHold = Math.max(...DATA.methods.map((m) => m.holdout?.mean ?? 0));
+let last = null, rows = "";
+DATA.methods.forEach((m) => {
+  if (m.family !== last) { rows += `<tr class="famrow"><td colspan="7">${DATA.families[m.family]}</td></tr>`; last = m.family; }
+  rows += `<tr><td class="first"><b>${esc(m.label)}</b><div class="small muted" style="margin-top:2px">${esc(m.desc)}${m.older_dev ? ` Số liệu cũ của cấu hình này (trước khi sửa quy tắc R0): ${pct(m.older_dev.mean)} ở dev.` : ""}</div><div class="tags">${tagsHtml(m)}</div></td>
+    <td class="num ${m.dev?.mean === bestDev ? "best" : ""}">${cell(m.dev)}</td><td class="num ${m.holdout?.mean === bestHold ? "best" : ""}">${cell(m.holdout)}</td>
+    <td class="num">${dif(m.dev)}</td><td class="num">${dif(m.holdout)}</td>
+    <td class="num">${m.dev ? num(m.dev.calls) : "–"} / ${m.holdout ? num(m.holdout.calls) : "–"}</td>
+    <td class="num">${m.dev ? num(m.dev.latency_ms / 1000, 1) + " s" : "–"}</td></tr>`;
+});
+$("#detail").innerHTML = `<thead><tr><th>Phương pháp</th><th class="num">Bộ dev</th><th class="num">Bộ held-out</th><th class="num">Dev: dễ / TB / khó</th><th class="num">Held-out: dễ / TB / khó</th><th class="num">Lời gọi LLM (dev / held-out)</th><th class="num">Độ trễ TB (dev)</th></tr></thead><tbody>${rows}</tbody>`;
+
+// ---------------------------------------------------------------- độ tin cậy + khuyến nghị
+const rj = DATA.rejudge;
+$("#rejudge").innerHTML = `<b>Đã chấm lại ${rj.total} câu bị chấm sai vì truy vấn "quá 30 giây".</b> Khi chạy nhiều thí nghiệm song song, ClickHouse quá tải và SQL đúng bị dừng giữa chừng.
+  Chạy lại đúng câu SQL model đã sinh (không gọi lại model) lúc máy rảnh thì <b>${rj.fixed} câu thực ra đúng</b>; số còn lại vẫn quá hạn nên là truy vấn nặng thật.
+  Mọi số liệu trong báo cáo là số liệu sau khi chấm lại.`;
+const single = DATA.methods.filter((m) => (m.dev && m.dev.n_runs < 2) || (m.holdout && m.holdout.n_runs < 2)).map((m) => m.label);
+$("#validity").innerHTML = [
+  `<b>Số lượt chạy:</b> hầu hết phương pháp chạy 2 lượt; ${single.length} phương pháp chỉ có 1 lượt (${single.map(esc).join("; ")}), nên chưa biết mức dao động của chúng.`,
+  `<b>Mức dao động thấy được:</b> chênh lệch lớn nhất giữa hai lượt của cùng một cấu hình là ${num(100 * Math.max(...ranges), 1)} điểm. Bộ dev có 58 câu có đáp án (1 câu = 1,7 điểm), bộ held-out có 40 câu (1 câu = 2,5 điểm), nên chênh lệch dưới 3-4 điểm không đáng tin.`,
+  `<b>Lịch sử truy vấn là giả lập:</b> 700 câu do chính chúng tôi sinh (có 12% câu "cẩu thả" và 24 câu lỗi) và chạy thật qua system.query_log. Cùng người viết bộ đánh giá nên quy ước trong lịch sử khớp với bộ đánh giá. Chỉ 1/58 câu dev và 1/40 câu held-out có câu lịch sử cùng cấu trúc (chỉ khác hằng số), nhưng vẫn cùng loại tác vụ. <b>Kết quả chứng minh cơ chế hoạt động, chưa chứng minh mức cải thiện trên log thật.</b>`,
+  `<b>Bộ dev đã được xem kết quả để chỉnh hệ thống</b> nên dễ lạc quan; bộ held-out chưa. Bộ dev còn che mất tác dụng của quy tắc nghiệp vụ (có few-shot mà không quy tắc vẫn đạt ${pct(g("norules", "dev"))} ở dev nhưng chỉ ${pct(g("norules", "holdout"))} ở held-out), nên ưu tiên đọc cột held-out.`,
+  `<b>Chuỗi cải tiến ban đầu chỉ đo trên bộ dev</b> (chưa có bộ held-out lúc đó). Dòng "Kiểm tra hình dạng" dùng số liệu chạy lại bằng mã nguồn mới nhất.`,
+].map((s) => `<li>${s}</li>`).join("");
+$("#recs").innerHTML = [
+  `<b>Khi triển khai database mới, bật khai thác lịch sử truy vấn ngay từ đầu</b> (<code>python mine_query_log.py</code>): chưa cần viết quy tắc hay few-shot vẫn đạt khoảng ${pct(coldH.dev, 0)}-${pct(coldH.hold, 0)} trên dữ liệu giả lập.`,
+  `<b>Vẫn viết quy tắc nghiệp vụ dần</b>, ưu tiên những thứ lịch sử không nói được: định nghĩa "hóa đơn hợp lệ" nghĩa là gì, cách hiểu các mã trạng thái. Đây là phần tạo ra khoảng cách còn lại tới ${pct(full.hold, 0)}.`,
+  `<b>Giữ bảng danh mục, gợi ý sửa theo mã lỗi và chặn truy vấn nặng</b> (rẻ, không làm giảm độ chính xác); <b>bỏ bước model tự soát logic</b>.`,
+  `<b>Đo thêm tổ hợp "đủ quy tắc + lịch sử"</b> (cấu hình <code>rules_history</code> đã có trong mã nguồn, chưa chạy) để biết lịch sử có đưa được kết quả vượt mức ${pct(full.hold, 0)} hay không.`,
+  `<b>Chạy trên system.query_log thật của công ty</b> để kiểm tra kết quả có giữ được khi log lộn xộn hơn, nhiều người viết khác nhau, quy ước không nhất quán.`,
+].map((s) => `<li>${s}</li>`).join("");
+</script>
+</body>
+</html>
