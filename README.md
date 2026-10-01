@@ -18,7 +18,7 @@ streamlit run app.py                    # demo web
 
 python evaluate.py --configs baseline   # baseline accuracy (Mức 1)
 python evaluate.py --configs all        # bảng ablation (Mức 2) -> results/clickhouse*/report.md
-python -m unittest -v                   # 47 test, không gọi API, không cần database
+python -m unittest -v                   # 48 test offline + 37 test chạy trên hddt thật (tests/test_hddt_live.py, chỉ đọc, LLM giả)
 python evaluate.py --configs all --oracle   # tự kiểm tra harness chấm điểm, không gọi API
 ```
 
