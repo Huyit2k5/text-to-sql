@@ -45,7 +45,7 @@ _CH_FORBIDDEN = re.compile(r"\bINTO\s+OUTFILE\b|\bSYSTEM\s+\w|\bKILL\s+QUERY\b|\
 # Mã lỗi ClickHouse -> error_code của ExecResult.
 _LIMIT_CODES = {159: "timeout", 394: "timeout", 158: "limit", 307: "limit", 241: "limit", 396: "limit"}
 _FORBIDDEN_CODES = {497, 516}           # ACCESS_DENIED, AUTHENTICATION_FAILED
-_READONLY_CODES = {164, 452}            # READONLY, SETTING_CONSTRAINT_VIOLATION
+_READONLY_CODES = {164}                 # READONLY: ghi dữ liệu hoặc đổi setting bằng user chỉ đọc
 # Gợi ý sửa theo mã lỗi (gửi kèm lỗi cho model khi bật Config.error_hints).
 ERROR_HINTS = {
     184: "Không được lồng hàm gộp trong hàm gộp (ví dụ countIf(x > min(x))). Tính giá trị gộp bên trong (min, max, "
@@ -65,9 +65,11 @@ ERROR_HINTS = {
     53: "Kiểu dữ liệu không khớp: ép kiểu rõ ràng; so sánh cột Enum bằng tên giá trị dạng chuỗi.",
 }
 def _is_readonly_setting_error(e: Exception) -> bool:
-    """User readonly=1 không được đổi setting: server báo mã 164 / 452, còn clickhouse-connect tự chặn phía client
-    với thông báo "Setting ... is readonly"."""
-    return _error_parts(e)[0] in _READONLY_CODES or bool(re.search(r"setting .{0,60} is readonly", str(e), re.I))
+    """User readonly=1 không được đổi setting: server báo "Cannot modify '...' setting in readonly mode", còn
+    clickhouse-connect tự chặn phía client với thông báo "Setting ... is readonly". Nhận diện theo nội dung, không theo
+    mã lỗi: mã 164 còn xuất hiện khi user chỉ đọc cố ghi dữ liệu, mã 452 là mọi vi phạm ràng buộc setting; hai trường hợp
+    đó không được bật chế độ hạn chế (bật là tắt vĩnh viễn giới hạn thời gian / số dòng của cả tiến trình)."""
+    return bool(re.search(r"setting .{0,60} is readonly|cannot modify .{0,60} setting in readonly mode", str(e), re.I))
 
 
 class _Restricted(Exception):
@@ -120,6 +122,20 @@ class ClickHouseBackend(Backend):
     def username(self, policy: Policy) -> str:
         return self.user_template.format(user=self.user_prefix, role=policy.name)
 
+    def _client_restricted(self, policy: Policy):
+        """Client riêng cho chế độ hạn chế: không gửi được max_execution_time nên ép thời gian chờ phía client
+        (chờ dữ liệu quá timeout_s thì ngắt kết nối, server hủy truy vấn khi không ghi được kết quả)."""
+        user = self.username(policy)
+        with self._lock:
+            key = (user, "restricted")
+            if key not in self._clients:
+                import clickhouse_connect
+                self._clients[key] = clickhouse_connect.get_client(
+                    host=self.host, port=self.port, username=user, password=self.password,
+                    database=self.database, secure=self.secure, connect_timeout=10,
+                    send_receive_timeout=max(1, int(self.timeout_s)), autogenerate_session_id=False)
+            return self._clients[key]
+
     def _client(self, policy: Policy):
         user = self.username(policy)
         with self._lock:
@@ -133,9 +149,18 @@ class ClickHouseBackend(Backend):
             return self._clients[user]
 
     # ------------------------------------------------------------------ schema
+    def _schema_signature(self) -> str:
+        """Băm (bảng, cột, kiểu) hiện có: thêm / xóa / đổi kiểu cột thì khóa đệm đổi, không phải chờ hết hạn."""
+        import hashlib
+        rows = self._client(POLICIES["admin"]).query(
+            "SELECT table, name, type FROM system.columns WHERE database = {db:String} ORDER BY table, position",
+            parameters={"db": self.database}).result_rows
+        return hashlib.sha256(repr([tuple(r) for r in rows]).encode()).hexdigest()[:16]
+
     def load_schema(self, docs_path=None, n_samples: int = 3):
         """Như _load_schema nhưng lưu đệm vào .cache/ (mặc định 24 giờ, T2SQL_SCHEMA_CACHE_HOURS=0 để tắt):
-        database lớn có hàng trăm cột nên lấy giá trị mẫu mất cả chục giây mỗi lần khởi động."""
+        database lớn có hàng trăm cột nên lấy giá trị mẫu mất cả chục giây mỗi lần khởi động.
+        Khóa đệm có chữ ký cấu trúc bảng; giá trị mẫu (lấy từ dữ liệu thật) nằm dạng văn bản thường trong .cache/."""
         import hashlib
         import json
 
@@ -147,7 +172,11 @@ class ClickHouseBackend(Backend):
         if docs_path:
             with open(docs_path, encoding="utf-8") as f:
                 docs_text = f.read()
-        key = hashlib.sha256(f"{self.host}:{self.port}/{self.database}|{n_samples}|{docs_text}".encode()).hexdigest()[:20]
+        try:
+            signature = self._schema_signature()
+        except Exception:
+            return self._load_schema(docs_path, n_samples)          # không đọc được cấu trúc bảng: không dùng đệm
+        key = hashlib.sha256(f"{self.host}:{self.port}/{self.database}|{n_samples}|{signature}|{docs_text}".encode()).hexdigest()[:20]
         path = os.path.join(os.environ.get("T2SQL_CACHE_DIR") or os.path.join(os.path.dirname(__file__), "..", "..", ".cache"),
                             f"schema_{self.database}_{key}.json")
         try:
@@ -261,7 +290,8 @@ class ClickHouseBackend(Backend):
                     "max_result_rows": self.max_rows + 1, "result_overflow_mode": "break",
                     "log_comment": log_comment[:200]}
         try:
-            client = self._client(policy if safe else POLICIES["admin"])
+            who = policy if safe else POLICIES["admin"]
+            client = self._client(who)
             sql_text = sql_text.rstrip("; "+chr(10))
             try:
                 if self.restricted:
@@ -269,15 +299,18 @@ class ClickHouseBackend(Backend):
                 res = client.query(sql_text, settings=settings)
                 cols, rows = list(res.column_names), res.result_rows
             except _Restricted:
-                cols, rows = self._run_streaming(client, sql_text)
+                cols, rows = self._run_streaming(self._client_restricted(who), sql_text)
             except Exception as e:
                 if not _is_readonly_setting_error(e):
                     raise
                 self.restricted = True
-                cols, rows = self._run_streaming(client, sql_text)
+                cols, rows = self._run_streaming(self._client_restricted(who), sql_text)
         except Exception as e:  # clickhouse_connect.driver.exceptions.*
             from clickhouse_connect.driver.exceptions import OperationalError
             code, msg = _error_parts(e)
+            if self.restricted and code is None and re.search(r"timed? ?out", str(e), re.I):
+                return ExecResult(False, error=f"Truy vấn vượt quá {self.timeout_s:g}s và đã bị dừng.",
+                                  error_code="timeout", elapsed_ms=_ms(t0))
             if isinstance(e, OperationalError) and code is None:
                 return ExecResult(False, error=f"Không kết nối được ClickHouse: {msg}",
                                   error_code="db_unavailable", elapsed_ms=_ms(t0))

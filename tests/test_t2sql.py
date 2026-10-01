@@ -442,6 +442,10 @@ class TestClickHouseOffline(unittest.TestCase):
             with open(docs, "w", encoding="utf-8") as f:
                 f.write('{"a": 1}')
             be = ClickHouseBackend("clickhouse://u:p@ch.local:8123/hddt?single_user=1")
+            sig = ["v1"]
+            sig_patch = mock.patch.object(ClickHouseBackend, "_schema_signature", side_effect=lambda: sig[0])
+            sig_patch.start()
+            self.addCleanup(sig_patch.stop)
             with mock.patch.dict(os.environ, {"T2SQL_CACHE_DIR": os.path.join(tmp, "cache"), "T2SQL_SCHEMA_CACHE_HOURS": "24"}):
                 with mock.patch.object(ClickHouseBackend, "_load_schema", side_effect=lambda *a, **k: fake()) as loader:
                     first = be.load_schema(docs)
@@ -455,6 +459,11 @@ class TestClickHouseOffline(unittest.TestCase):
                         f.write('{"a": 2}')
                     be.load_schema(docs)
                     self.assertEqual(loader.call_count, 2)                    # đổi tài liệu thì nạp lại
+                    be.load_schema(docs)
+                    self.assertEqual(loader.call_count, 2)
+                    sig[0] = "v2"                                             # database thêm / xóa cột
+                    be.load_schema(docs)
+                    self.assertEqual(loader.call_count, 3)                    # đổi cấu trúc bảng thì nạp lại
             with mock.patch.dict(os.environ, {"T2SQL_CACHE_DIR": os.path.join(tmp, "cache"), "T2SQL_SCHEMA_CACHE_HOURS": "0"}):
                 with mock.patch.object(ClickHouseBackend, "_load_schema", side_effect=lambda *a, **k: fake()) as loader:
                     be.load_schema(docs)
@@ -486,6 +495,29 @@ class TestClickHouseOffline(unittest.TestCase):
         self.assertTrue(_is_readonly_setting_error(Exception("Setting max_execution_time is readonly")))
         self.assertTrue(_is_readonly_setting_error(Exception("Code: 164. DB::Exception: Cannot modify 'x' setting in readonly mode")))
         self.assertFalse(_is_readonly_setting_error(Exception("Code: 60. DB::Exception: Table x doesn't exist")))
+        # ghi dữ liệu bằng user chỉ đọc (cũng mã 164) và vi phạm ràng buộc setting (452) KHÔNG phải lỗi đổi setting
+        self.assertFalse(_is_readonly_setting_error(Exception("Code: 164. DB::Exception: Cannot execute query in readonly mode")))
+        self.assertFalse(_is_readonly_setting_error(Exception("Code: 452. DB::Exception: Setting max_memory_usage should not be changed")))
+
+    def test_write_attempt_keeps_limits_and_timeout_is_enforced_when_restricted(self):
+        from unittest import mock
+        from t2sql.db.clickhouse import ClickHouseBackend
+        be = ClickHouseBackend("clickhouse://u:p@ch.local:8123/hddt?single_user=1", timeout_s=7)
+        client = mock.Mock()
+        client.query.side_effect = Exception("Code: 164. DB::Exception: Cannot execute query in readonly mode")
+        with mock.patch.object(ClickHouseBackend, "_client", return_value=client):
+            r = be.run("SELECT 1")
+        self.assertFalse(r.ok)
+        self.assertFalse(be.restricted)                                   # lỗi ghi không làm mất giới hạn của cả tiến trình
+        slow = mock.Mock()
+        slow.query_rows_stream.side_effect = Exception("HTTPConnectionPool(host='ch.local', port=8123): Read timed out.")
+        be.restricted = True
+        with mock.patch.object(ClickHouseBackend, "_client", return_value=mock.Mock()), \
+             mock.patch.object(ClickHouseBackend, "_client_restricted", return_value=slow) as rc:
+            r = be.run("SELECT 1")
+        self.assertEqual(r.error_code, "timeout")
+        self.assertIn("7s", r.error)
+        rc.assert_called()
 
     def test_ast_check_blocks_clickhouse_specific_risks(self):
         from t2sql.db.clickhouse import ast_check
