@@ -23,7 +23,6 @@ from t2sql.evaluation import ERROR_CATEGORIES, categorize, results_match
 from t2sql.llm import LLMError, ScriptedLLM, default_llm
 from t2sql.pipeline import ABLATION_ORDER, CONFIGS, TextToSQL
 
-DATASET = os.path.join(ROOT, "eval", "dataset.json")
 RESULTS = os.path.join(ROOT, "results")
 LABELS = {"baseline": "Baseline (Mức 1)", "docs": "+ Mô tả cột", "fewshot": "+ Few-shot",
           "linking": "+ Schema linking", "selfcorrect": "+ Tự sửa lỗi", "production": "Production (Mức 3)",
@@ -171,9 +170,9 @@ def main():
     ap.add_argument("--workers", type=int, default=int(os.environ.get("T2SQL_WORKERS") or 4))
     ap.add_argument("--oracle", action="store_true", help="dùng LLM giả trả về SQL chuẩn (kiểm tra harness)")
     ap.add_argument("--out", default=RESULTS)
-    ap.add_argument("--db", default=None, help="URL database (mặc định lấy T2SQL_DATABASE_URL; trống = SQLite)")
+    ap.add_argument("--db", default=None, help="URL ClickHouse (mặc định lấy T2SQL_DATABASE_URL)")
     ap.add_argument("--dataset", default=None,
-                    help="file câu hỏi đánh giá (mặc định: theo tên database, datasets/<tên>/eval.json hoặc eval/dataset.json)")
+                    help="file câu hỏi đánh giá (mặc định: datasets/<tên database>/eval.json)")
     ap.add_argument("--resume", action="store_true",
                     help="giữ kết quả đã có trong results/.../<config>.jsonl, chỉ chạy các câu còn thiếu hoặc bị lỗi LLM")
     args = ap.parse_args()
@@ -181,7 +180,9 @@ def main():
     names = ABLATION_ORDER if args.configs == ["all"] else args.configs
     ex = make_backend(args.db, max_rows=100_000, timeout_s=60)
     ds = datasets.for_backend(ex)
-    with open(args.dataset or ds.eval_path or DATASET, encoding="utf-8") as f:
+    if not (args.dataset or ds.eval_path):
+        sys.exit(f"Bộ dữ liệu {ds.name} chưa có eval.json: truyền --dataset hoặc tạo datasets/{ds.name}/eval.json")
+    with open(args.dataset or ds.eval_path, encoding="utf-8") as f:
         items = json.load(f)
     if args.limit:
         items = items[: args.limit]
@@ -191,16 +192,14 @@ def main():
     gold = {}
     for it in items:
         if it.get("sql"):
-            # SQL chuẩn viết cho dialect của bộ dữ liệu (shop: SQLite) -> DB đích (ưu tiên bản viết tay sql_pg...)
-            it["sql_source"], it["sql"] = it["sql"], example_sql(it, ex.dialect, source=ds.sql_dialect)
+            it["sql_source"], it["sql"] = it["sql"], example_sql(it)
             g = ex.run(it["sql"], safe=False)
             if not g.ok:
                 sys.exit(f"SQL chuẩn của {it['id']} lỗi trên {ex.display_name}: {g.error}\n{it['sql']}")
             gold[it["id"]] = g
 
     out_dir = args.out
-    if ex.dialect != "sqlite":
-        out_dir = os.path.join(out_dir, ex.dialect if ds.name == "shop" else f"{ex.dialect}_{ds.name}")
+    out_dir = os.path.join(out_dir, f"{ex.dialect}_{ds.name}")
     if args.oracle:
         out_dir = os.path.join(out_dir, "oracle")
     os.makedirs(out_dir, exist_ok=True)

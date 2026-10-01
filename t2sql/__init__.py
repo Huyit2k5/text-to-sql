@@ -1,9 +1,7 @@
-"""Text-to-SQL: câu hỏi tiếng Việt -> SQL (SQLite) -> kết quả + giải thích."""
+"""Text-to-SQL: câu hỏi tiếng Việt -> SQL (ClickHouse) -> kết quả + giải thích."""
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_DB = os.path.join(ROOT, "data", "shop.db")
-DEFAULT_DOCS = os.path.join(ROOT, "data", "schema_docs.json")
 TODAY = "2025-06-30"
 
 

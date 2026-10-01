@@ -1,0 +1,89 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "norules": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 1,
+        "wrong_filter": 3,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 6352.81935483871,
+      "usage": {
+        "calls": 65,
+        "input_tokens": 249119,
+        "output_tokens": 4817,
+        "seconds": 311.35376940015703
+      }
+    },
+    "history": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 1,
+        "business_logic": 1,
+        "wrong_aggregation": 1,
+        "wrong_filter": 3
+      },
+      "avg_latency_ms": 7643.620967741936,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 272107,
+        "output_tokens": 4798,
+        "seconds": 292.13548709999304
+      }
+    },
+    "lookup": {
+      "n": 62,
+      "ex": 0.9137931034482759,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.75,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 2,
+        "wrong_filter": 1,
+        "wrong_join": 1,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 7230.166129032258,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 335517,
+        "output_tokens": 4887,
+        "seconds": 373.94291549990885
+      }
+    }
+  }
+}

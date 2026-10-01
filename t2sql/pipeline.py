@@ -42,6 +42,9 @@ class Config:
     cost_guard_rows: int = 40_000_000   # ghi đè bằng T2SQL_MAX_ESTIMATED_ROWS
     semantic_check: bool = False    # thêm một lời gọi model soát lỗi logic của SQL + kết quả
     reasoning_hard: str | None = None   # bật reasoning (low/medium/high) cho câu hỏi có vẻ phức tạp
+    use_history: bool = False       # thêm thói quen khai thác từ lịch sử truy vấn của analyst (t2sql/history.py)
+    docs_variant: str | None = None  # dùng schema_docs.<variant>.json thay cho bản đầy đủ (ví dụ "norules")
+    history_parts: str = "both"     # both | conventions | snippets: phần nào của tri thức lịch sử đưa vào prompt
 
 
 CONFIGS = {
@@ -66,9 +69,52 @@ CONFIGS = {
     "reasoning": Config("reasoning", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
                         lookup_tables=True, error_hints=True, cost_guard=True, semantic_check=True,
                         reasoning_hard="medium"),
+    # Thí nghiệm tri thức từ lịch sử truy vấn: tài liệu KHÔNG có quy tắc nghiệp vụ, có / không có lịch sử
+    "norules": Config("norules", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                      lookup_tables=True, error_hints=True, docs_variant="norules"),
+    "history": Config("history", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3, shape_check=True,
+                      lookup_tables=True, error_hints=True, docs_variant="norules", use_history=True),
+    # Khởi đầu lạnh: database mới, chưa có quy tắc viết tay lẫn few-shot đã duyệt, chỉ có lịch sử truy vấn
+    "cold": Config("cold", use_docs=True, use_linking=True, max_retries=3, shape_check=True,
+                   lookup_tables=True, error_hints=True, docs_variant="norules"),
+    "cold_history": Config("cold_history", use_docs=True, use_linking=True, max_retries=3, shape_check=True,
+                           lookup_tables=True, error_hints=True, docs_variant="norules", use_history=True),
+    "cold_conv": Config("cold_conv", use_docs=True, use_linking=True, max_retries=3, shape_check=True,
+                        lookup_tables=True, error_hints=True, docs_variant="norules", use_history=True,
+                        history_parts="conventions"),
+    "cold_snip": Config("cold_snip", use_docs=True, use_linking=True, max_retries=3, shape_check=True,
+                        lookup_tables=True, error_hints=True, docs_variant="norules", use_history=True,
+                        history_parts="snippets"),
+    "rules_history": Config("rules_history", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                            shape_check=True, lookup_tables=True, error_hints=True, use_history=True),
+    # production trước khi bật gợi ý lỗi / bảng danh mục / chặn truy vấn nặng (giữ để so sánh)
+    "production_plain": Config("production_plain", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                               shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                               guard_write_intent=True),
+    # production không dùng few-shot: đo riêng tác dụng của ví dụ mẫu (bộ dữ liệu mới thường chưa có)
+    "production_nofs": Config("production_nofs", use_docs=True, use_fewshot=False, use_linking=True, max_retries=3,
+                              shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                              guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
+    # production với tài liệu schema bản cũ (schema_docs.v1.json): đo tác dụng của lần bổ sung định nghĩa nghiệp vụ
+    "production_docsv1": Config("production_docsv1", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                docs_variant="v1"),
+    # production với tài liệu schema v3 (trước khi bổ sung nghĩa Status / Type suy ra từ ghi chú trên hóa đơn)
+    "production_docsv3": Config("production_docsv3", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                docs_variant="v3"),
+    # production với self-consistency (3 phương án)
+    "production_sc": Config("production_sc", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                            shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                            guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                            n_candidates=3),
+    # explain=False: giải thích SQL là một lần gọi model thứ hai (đo trên hddt: 3,9 giây, 57% thời gian một câu hỏi).
+    # Giao diện vẫn có nút bật; các cấu hình so sánh phía trên giữ explain=True để kết quả lịch sử không đổi.
     "production": Config("production", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
-                         shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
-                         guard_write_intent=True),
+                         shape_check=True, allow_clarify=True, rewrite_followups=True, explain=False,
+                         guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
 }
 ABLATION_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect"]
 
@@ -164,33 +210,41 @@ class TextToSQL:
     def __init__(self, llm: BaseLLM, config: Config | str = "baseline", db: Backend | str | None = None,
                  docs_path: str | None = None, fewshot_path: str | None = None,
                  max_rows: int = 200, timeout_s: float | None = None, logger=None):
-        """db: một Backend, một URL (postgresql://... / sqlite:///...), đường dẫn file SQLite,
-        hoặc None để lấy từ T2SQL_DATABASE_URL (trống = SQLite data/shop.db).
-        docs_path=None: dùng bộ dữ liệu theo tên database (datasets/<tên>/, không có thì bộ shop mặc định)."""
+        """db: một Backend, một URL clickhouse://..., hoặc None để lấy từ T2SQL_DATABASE_URL.
+        docs_path=None: dùng bộ dữ liệu theo tên database (datasets/<tên>/, bắt buộc phải có)."""
         self.llm = llm
         self.config = CONFIGS[config] if isinstance(config, str) else config
         if isinstance(db, Backend):
             self.backend = db
         else:
-            url = db if db is None or "://" in db else f"sqlite:///{db}"
-            self.backend = make_backend(url, max_rows=max_rows, timeout_s=timeout_s)
+            self.backend = make_backend(db, max_rows=max_rows, timeout_s=timeout_s)
         self.executor = self.backend   # tên cũ
         self.dialect = self.backend.dialect
         self.dataset = datasets.for_backend(self.backend) if docs_path is None else datasets.from_docs(docs_path)
         self.policies = self.dataset.policies
-        self.schema = self.backend.load_schema(self.dataset.docs_path)
+        self.schema = self.backend.load_schema(self.dataset.docs_path_for(self.config.docs_variant))
         self.schema.requires = {t: set(r) for t, r in self.dataset.docs.get("requires", {}).items()}
         self.retriever = None
         if self.config.use_fewshot:
-            path = fewshot_path or self.dataset.fewshot_path or os.path.join(ROOT, "eval", "fewshot_pool.json")
-            self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k)
-            # Ví dụ viết cho dialect của bộ dữ liệu (shop: SQLite): chuyển sang DB đích (ưu tiên bản viết tay nếu có).
-            for ex in self.retriever.examples:
-                ex["sql"] = example_sql(ex, self.dialect, source=self.dataset.sql_dialect)
+            path = fewshot_path or self.dataset.fewshot_path
+            if path and os.path.exists(path):      # bộ dữ liệu mới chưa có few-shot: chạy không kèm ví dụ
+                self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k)
+                for ex in self.retriever.examples:
+                    ex["sql"] = example_sql(ex)
         self.linker = SchemaLinker(self.schema, top_k=self.config.linking_top_k) if self.config.use_linking else None
         self.lookups = self._load_lookups() if self.config.lookup_tables else {}
-        self.cost_limit = int(os.environ.get("T2SQL_MAX_ESTIMATED_ROWS") or self.config.cost_guard_rows)
+        self.history = self._load_history() if self.config.use_history else None
+        # ngưỡng của bộ dữ liệu (docs "cost_guard_rows") theo cỡ server thật; biến môi trường ghi đè
+        self.cost_limit = int(os.environ.get("T2SQL_MAX_ESTIMATED_ROWS") or self.dataset.docs.get("cost_guard_rows")
+                              or self.config.cost_guard_rows)
         self.logger = logger
+
+    def _load_history(self):
+        from .history import HistoryKnowledge, load_history
+        if not self.dataset.history_path:
+            raise FileNotFoundError("Chưa có query_history.jsonl: chạy `python mine_query_log.py` trước.")
+        cols = {t: set(tb.column_names()) for t, tb in self.schema.tables.items()}
+        return HistoryKnowledge([r["sql"] for r in load_history(self.dataset.history_path)], cols, self.dialect)
 
     def _load_lookups(self) -> dict:
         """Bảng danh mục nhỏ (ít dòng): {bảng: (cột, dòng, tập giá trị chữ viết thường để liên kết theo giá trị)}."""
@@ -270,6 +324,11 @@ class TextToSQL:
                 keep = [i for i, c in enumerate(cols) if c in schema.tables[t].column_names()]
                 parts[t] = ([cols[i] for i in keep], [tuple(r[i] for i in keep) for r in rows])
             schema_text += "\n\n" + prompts.lookup_text(parts)
+        if self.history:
+            denied = {c for t, c in policy.denied_columns}
+            hist = self.history.render(set(schema.tables), q, exclude_columns=denied, parts=cfg.history_parts)
+            if hist:
+                schema_text += "\n\n" + hist
         system = prompts.sql_system(schema_text, cfg.allow_clarify, self.dialect)
         reasoning = cfg.reasoning_hard if cfg.reasoning_hard and looks_hard(q, len(schema.tables)) else None
         ans.reasoning = reasoning

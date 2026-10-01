@@ -37,7 +37,8 @@ _SCALAR = re.compile(r"\b(bao nhiêu|mấy|tổng|trung bình|tỉ lệ|phần t
 _SUPER = re.compile(r"\bnhất\b")
 _WHICH = re.compile(r"\bnào\b")
 _TOPN = re.compile(r"\btop\s*(\d+)\b|\b(\d+)\s+[^\d,.?]{1,40}?\b(cao|nhiều|thấp|ít|lớn|nhỏ|đắt|rẻ) nhất\b")
-_PERCENT = re.compile(r"phần trăm|%|tỉ lệ phần trăm")
+# "%" chỉ tính là yêu cầu tỉ lệ khi không đứng sau một con số: "thuế suất 5%" là giá trị lọc, không phải câu hỏi về tỉ lệ
+_PERCENT = re.compile(r"phần trăm|(?<![\d.,])(?<![\d.,]\s)%|tỉ lệ phần trăm")
 _SHARE = re.compile(r"\b(chiếm|tỉ trọng)\b")
 _CHANGE = re.compile(r"\b(tăng|giảm|thay đổi|chênh lệch)\b")
 

@@ -1,0 +1,296 @@
+[
+ {
+  "id": "p01",
+  "difficulty": "easy",
+  "question": "co bao nhieu hoa don trong thang 5 nam 2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h01",
+  "style": "không dấu"
+ },
+ {
+  "id": "p02",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 xuất được bao nhiêu hóa đơn vậy?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h01",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p03",
+  "difficulty": "easy",
+  "question": "SL HĐ tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h01",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p04",
+  "difficulty": "easy",
+  "question": "tong tien thue gtgt thang 5 2025",
+  "sql": "SELECT sum(VATAmount) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h04",
+  "style": "không dấu"
+ },
+ {
+  "id": "p05",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 tổng thuế GTGT trên các hóa đơn là bao nhiêu tiền?",
+  "sql": "SELECT sum(VATAmount) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h04",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p06",
+  "difficulty": "easy",
+  "question": "Tổng thuế GTGT T5/2025",
+  "sql": "SELECT sum(VATAmount) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h04",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p07",
+  "difficulty": "medium",
+  "question": "5 cong ty xuat nhieu hoa don nhat thang 5/2025 kem so luong hoa don",
+  "sql": "SELECT ComName, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' GROUP BY ComName ORDER BY so_hd DESC LIMIT 5",
+  "base": "h14",
+  "style": "không dấu",
+  "ordered": true
+ },
+ {
+  "id": "p08",
+  "difficulty": "medium",
+  "question": "Cho tôi danh sách 5 công ty xuất hóa đơn nhiều nhất trong tháng 5/2025 và số hóa đơn của từng công ty",
+  "sql": "SELECT ComName, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' GROUP BY ComName ORDER BY so_hd DESC LIMIT 5",
+  "base": "h14",
+  "style": "khẩu ngữ",
+  "ordered": true
+ },
+ {
+  "id": "p09",
+  "difficulty": "medium",
+  "question": "top 5 cty nhiều HĐ nhất T5/2025 + số HĐ",
+  "sql": "SELECT ComName, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' GROUP BY ComName ORDER BY so_hd DESC LIMIT 5",
+  "base": "h14",
+  "style": "viết tắt",
+  "ordered": true
+ },
+ {
+  "id": "p10",
+  "difficulty": "easy",
+  "question": "bao nhieu hoa don khong hop le theo co quan thue thang 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2",
+  "base": "h30",
+  "style": "không dấu"
+ },
+ {
+  "id": "p11",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 cơ quan thuế báo bao nhiêu hóa đơn không hợp lệ?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2",
+  "base": "h30",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p12",
+  "difficulty": "easy",
+  "question": "HĐ không hợp lệ (CQT) T5/2025 là bao nhiêu",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2",
+  "base": "h30",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p13",
+  "difficulty": "easy",
+  "question": "co bao nhieu hoa don chua gui co quan thue thang 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5)",
+  "base": "h32",
+  "style": "không dấu"
+ },
+ {
+  "id": "p14",
+  "difficulty": "easy",
+  "question": "Trong tháng 5/2025 còn bao nhiêu hóa đơn chưa được gửi lên cơ quan thuế?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5)",
+  "base": "h32",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p15",
+  "difficulty": "easy",
+  "question": "số HĐ chưa gửi CQT tháng 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5)",
+  "base": "h32",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p16",
+  "difficulty": "easy",
+  "question": "co bao nhieu hoa don dieu chinh giam thang 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND Type = 3",
+  "base": "h33",
+  "style": "không dấu"
+ },
+ {
+  "id": "p17",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 có bao nhiêu hóa đơn thuộc loại điều chỉnh giảm vậy?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND Type = 3",
+  "base": "h33",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p18",
+  "difficulty": "easy",
+  "question": "HĐ điều chỉnh giảm T5/2025 bao nhiêu",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND Type = 3",
+  "base": "h33",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p19",
+  "difficulty": "medium",
+  "question": "ty le phan tram hoa don lap bang usd thang 5/2025",
+  "sql": "SELECT countIf(CurrencyUnit = 'USD') * 100.0 / count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h16",
+  "style": "không dấu"
+ },
+ {
+  "id": "p20",
+  "difficulty": "medium",
+  "question": "Trong tháng 5/2025, hóa đơn bằng đô la Mỹ chiếm bao nhiêu phần trăm?",
+  "sql": "SELECT countIf(CurrencyUnit = 'USD') * 100.0 / count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h16",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p21",
+  "difficulty": "medium",
+  "question": "% HĐ USD tháng 5/2025",
+  "sql": "SELECT countIf(CurrencyUnit = 'USD') * 100.0 / count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h16",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p22",
+  "difficulty": "medium",
+  "question": "so hoa don theo tung thang trong quy 1 nam 2025",
+  "sql": "SELECT toStartOfMonth(ArisingDate) AS thang, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-01-01' AND ArisingDate < '2025-04-01' GROUP BY thang ORDER BY thang",
+  "base": "h11",
+  "style": "không dấu",
+  "ordered": true
+ },
+ {
+  "id": "p23",
+  "difficulty": "medium",
+  "question": "Quý 1/2025, mỗi tháng có bao nhiêu hóa đơn?",
+  "sql": "SELECT toStartOfMonth(ArisingDate) AS thang, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-01-01' AND ArisingDate < '2025-04-01' GROUP BY thang ORDER BY thang",
+  "base": "h11",
+  "style": "khẩu ngữ",
+  "ordered": true
+ },
+ {
+  "id": "p24",
+  "difficulty": "medium",
+  "question": "SL HĐ từng tháng Q1/2025",
+  "sql": "SELECT toStartOfMonth(ArisingDate) AS thang, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-01-01' AND ArisingDate < '2025-04-01' GROUP BY thang ORDER BY thang",
+  "base": "h11",
+  "style": "viết tắt",
+  "ordered": true
+ },
+ {
+  "id": "p25",
+  "difficulty": "easy",
+  "question": "co bao nhieu hoa don khong chiu thue gtgt (kct) trong thang 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND VATRate = -1",
+  "base": "h43",
+  "style": "không dấu"
+ },
+ {
+  "id": "p26",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 có bao nhiêu hóa đơn KCT?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND VATRate = -1",
+  "base": "h43",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p27",
+  "difficulty": "easy",
+  "question": "số HĐ KCT T5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND VATRate = -1",
+  "base": "h43",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p28",
+  "difficulty": "medium",
+  "question": "tong so luong hang hoa ban ra thang 5/2025 (chi tinh hang hoa, dich vu)",
+  "sql": "SELECT sum(Quantity) FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND Feature = 1",
+  "base": "h50",
+  "style": "không dấu"
+ },
+ {
+  "id": "p29",
+  "difficulty": "medium",
+  "question": "Tháng 5/2025 bán ra tổng cộng bao nhiêu hàng hóa, dịch vụ (không tính chiết khấu, ghi chú)?",
+  "sql": "SELECT sum(Quantity) FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND Feature = 1",
+  "base": "h50",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p30",
+  "difficulty": "medium",
+  "question": "Tổng SL hàng bán ra T5/2025 (chỉ hàng hóa dịch vụ)",
+  "sql": "SELECT sum(Quantity) FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND Feature = 1",
+  "base": "h50",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p31",
+  "difficulty": "easy",
+  "question": "tong tien hang chua thue cua cac hoa don thang 5/2025",
+  "sql": "SELECT sum(Total) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h48",
+  "style": "không dấu"
+ },
+ {
+  "id": "p32",
+  "difficulty": "easy",
+  "question": "Tháng 5/2025 các hóa đơn có tổng tiền hàng chưa tính thuế là bao nhiêu?",
+  "sql": "SELECT sum(Total) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h48",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p33",
+  "difficulty": "easy",
+  "question": "Tổng tiền chưa thuế T5/2025",
+  "sql": "SELECT sum(Total) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'",
+  "base": "h48",
+  "style": "viết tắt"
+ },
+ {
+  "id": "p34",
+  "difficulty": "hard",
+  "question": "co bao nhieu hoa don co it nhat mot dong hang thue suat 8% trong thang 5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND (ComID, id) IN (SELECT ComID, InvID FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND VATRate = 8)",
+  "base": "h53",
+  "style": "không dấu"
+ },
+ {
+  "id": "p35",
+  "difficulty": "hard",
+  "question": "Trong tháng 5/2025, bao nhiêu hóa đơn có chứa ít nhất một dòng hàng chịu thuế 8%?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND (ComID, id) IN (SELECT ComID, InvID FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND VATRate = 8)",
+  "base": "h53",
+  "style": "khẩu ngữ"
+ },
+ {
+  "id": "p36",
+  "difficulty": "hard",
+  "question": "HĐ có ≥1 dòng hàng thuế 8% T5/2025",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND (ComID, id) IN (SELECT ComID, InvID FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND VATRate = 8)",
+  "base": "h53",
+  "style": "viết tắt"
+ }
+]

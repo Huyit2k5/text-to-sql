@@ -1,0 +1,90 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "norules": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 1,
+        "execution_error": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1,
+        "wrong_filter": 2
+      },
+      "avg_latency_ms": 6010.9112903225805,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 254801,
+        "output_tokens": 4974,
+        "seconds": 279.3023792998865
+      }
+    },
+    "history": {
+      "n": 62,
+      "ex": 0.896551724137931,
+      "ex_lenient": 0.9137931034482759,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.7,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 1,
+        "business_logic": 1,
+        "wrong_aggregation": 1,
+        "wrong_filter": 3
+      },
+      "avg_latency_ms": 8501.395161290322,
+      "usage": {
+        "calls": 64,
+        "input_tokens": 272185,
+        "output_tokens": 4744,
+        "seconds": 247.89514739986043
+      }
+    },
+    "lookup": {
+      "n": 62,
+      "ex": 0.9137931034482759,
+      "ex_lenient": 0.9310344827586207,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 1.0,
+        "hard": 0.75,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 3,
+      "errors": {
+        "wrong_table": 2,
+        "date_function": 1,
+        "wrong_aggregation": 1,
+        "wrong_columns": 1
+      },
+      "avg_latency_ms": 13709.701612903225,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 334080,
+        "output_tokens": 4916,
+        "seconds": 726.6790830006357
+      }
+    }
+  }
+}

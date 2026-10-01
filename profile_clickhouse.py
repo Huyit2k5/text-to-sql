@@ -10,14 +10,16 @@ riêng; sau đó đọc system.query_log (type = 'QueryFinish') và lấy trung 
   - Score      : Duration của SQL model / Duration của SQL chuẩn
 Truy vấn chạy bằng user chỉ đọc t2sql_admin; đọc query_log bằng user quản trị (CLICKHOUSE_USER / CLICKHOUSE_PASSWORD).
 
-  python profile_clickhouse.py              # đọc results/clickhouse/*.jsonl, ghi results/clickhouse/query_metrics.jsonl
-  python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"   # -> results/clickhouse_einvoice/
+  python profile_clickhouse.py              # đọc results/clickhouse_<bộ dữ liệu>/*.jsonl, ghi query_metrics.jsonl
+  python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"   # chọn database khác
+  python profile_clickhouse.py --db-env T2SQL_DATABASE_URL_CONGTY --url-credentials --configs production       --results results/hddt_t2/dev_v4/clickhouse_hddt --repeat 2     # ClickHouse công ty: dùng tài khoản trong URL
 """
 import argparse
 import json
 import os
 import statistics
 import sys
+import time
 import uuid
 
 import clickhouse_connect
@@ -27,18 +29,36 @@ from t2sql import ROOT, datasets
 from t2sql.db.clickhouse import ClickHouseBackend
 from t2sql.dialect import example_sql
 from t2sql.safety import POLICIES
-from profile_queries import status_of
 
-CONFIG_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect", "shapecheck", "consistency", "robust"]
+SLOW_SCORE = 2.0        # chậm hơn SQL chuẩn quá 2 lần ...
+SLOW_MIN_MS = 20.0      # ... và mất trên 20 ms thì đánh dấu "Chậm"
+SLOW_ABS_MS = 1000.0    # hoặc trên 1 giây
+
+
+def status_of(rec, m, gold_m):
+    if not m or not m["ok"]:
+        return "Lỗi"
+    if not rec["correct"]:
+        return "Sai kết quả"
+    score = m.get("score")
+    if m["duration_ms"] > SLOW_ABS_MS or (score and score > SLOW_SCORE and m["exec_ms"] > SLOW_MIN_MS):
+        return "Chậm"
+    return "Normal"
+
+
+CONFIG_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect", "shapecheck", "consistency", "robust", "production"]
 
 
 class Profiler:
-    def __init__(self, url, repeat=3):
+    def __init__(self, url, repeat=3, url_credentials=False, max_result_rows=0):
         self.backend = ClickHouseBackend(url)
         self.client = self.backend._client(POLICIES["admin"])
+        self.max_result_rows = max_result_rows      # > 0: dừng sau số dòng này khi đo (tránh kéo về kết quả quá lớn)
+        # url_credentials: đọc system.query_log bằng chính tài khoản trong URL (ClickHouse có sẵn của công ty)
+        user = self.backend.username(POLICIES["admin"]) if url_credentials else os.environ.get("CLICKHOUSE_USER") or "default"
+        password = self.backend.password if url_credentials else os.environ.get("CLICKHOUSE_PASSWORD", "")
         self.admin = clickhouse_connect.get_client(
-            host=self.backend.host, port=self.backend.port, secure=self.backend.secure,
-            username=os.environ.get("CLICKHOUSE_USER") or "default", password=os.environ.get("CLICKHOUSE_PASSWORD", ""))
+            host=self.backend.host, port=self.backend.port, secure=self.backend.secure, username=user, password=password)
         self.server = self.client.server_version
         self.repeat = repeat
         self.run_id = uuid.uuid4().hex[:8]
@@ -53,7 +73,10 @@ class Profiler:
         try:
             for i in range(self.repeat + 1):
                 tag = f"t2sql-prof:{self.run_id}:{len(self.pending)}:{i}"
-                res = self.client.query(sql_text, settings={"log_comment": tag, "max_execution_time": 60})
+                settings = {"log_comment": tag, "max_execution_time": 60}
+                if self.max_result_rows:
+                    settings.update(max_result_rows=self.max_result_rows, result_overflow_mode="break")
+                res = self.client.query(sql_text, settings=settings)
                 if i:                   # lần 0 là khởi động
                     tags.append(tag)
             self.pending[sql_text] = (tags, len(res.result_rows))
@@ -62,7 +85,10 @@ class Profiler:
             self.pending[sql_text] = _error_parts(e)[1]
 
     def collect(self):
-        self.admin.command("SYSTEM FLUSH LOGS")
+        try:
+            self.admin.command("SYSTEM FLUSH LOGS")
+        except Exception:                      # tài khoản công ty có thể không có quyền: chờ chu kỳ tự ghi log của ClickHouse
+            time.sleep(15)
         rows = self.admin.query("""
             SELECT log_comment,
                    dateDiff('microsecond', query_start_time_microseconds, event_time_microseconds) AS dur_us,
@@ -96,24 +122,30 @@ class Profiler:
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--results", default=None, help="mặc định results/clickhouse (shop) hoặc results/clickhouse_<tên bộ dữ liệu>")
-    ap.add_argument("--db", default=os.environ.get("T2SQL_DATABASE_URL_CLICKHOUSE"))
+    ap.add_argument("--results", default=None, help="mặc định results/clickhouse_<tên bộ dữ liệu>")
+    ap.add_argument("--db", default=os.environ.get("T2SQL_DATABASE_URL"))
+    ap.add_argument("--db-env", help="tên biến môi trường / .env chứa URL (thay cho --db)")
+    ap.add_argument("--url-credentials", action="store_true", help="đọc system.query_log bằng tài khoản trong URL")
+    ap.add_argument("--configs", nargs="+", default=CONFIG_ORDER, help="các tệp <cấu hình>.jsonl cần đo")
+    ap.add_argument("--max-result-rows", type=int, default=0, help="dừng sau số dòng này khi đo (0 = không giới hạn)")
     ap.add_argument("--repeat", type=int, default=3)
     args = ap.parse_args()
+    if args.db_env:
+        args.db = os.environ.get(args.db_env, "")
     if not (args.db or "").startswith("clickhouse"):
-        sys.exit("Cần T2SQL_DATABASE_URL_CLICKHOUSE (hoặc --db clickhouse://...).")
+        sys.exit("Cần T2SQL_DATABASE_URL (hoặc --db clickhouse://...).")
 
-    prof = Profiler(args.db, args.repeat)
+    prof = Profiler(args.db, args.repeat, args.url_credentials, args.max_result_rows)
     ds = datasets.for_backend(prof.backend)
-    args.results = args.results or os.path.join(ROOT, "results", "clickhouse" if ds.name == "shop" else f"clickhouse_{ds.name}")
+    args.results = args.results or os.path.join(ROOT, "results", f"clickhouse_{ds.name}")
     with open(ds.eval_path, encoding="utf-8") as f:
         items = {it["id"]: it for it in json.load(f)}
     print(f"ClickHouse {prof.server} tại {prof.backend.host}:{prof.backend.port}, bộ dữ liệu {ds.name}, "
           f"đo {args.repeat} lần/câu", flush=True)
 
-    gold_sql = {iid: example_sql(it, "clickhouse", source=ds.sql_dialect) for iid, it in items.items() if it.get("sql")}
+    gold_sql = {iid: example_sql(it) for iid, it in items.items() if it.get("sql")}
     records = []
-    for cfg in CONFIG_ORDER:
+    for cfg in args.configs:
         path = os.path.join(args.results, f"{cfg}.jsonl")
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:

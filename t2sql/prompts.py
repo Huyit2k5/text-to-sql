@@ -69,13 +69,13 @@ Nêu: lấy dữ liệu từ đâu, lọc theo điều kiện gì, tính toán g
 Nếu câu SQL có vẻ không khớp với câu hỏi, nói rõ điểm lệch. Không lặp lại câu SQL."""
 
 
-def sql_system(schema_text: str, allow_clarify: bool, dialect: str = "sqlite") -> str:
+def sql_system(schema_text: str, allow_clarify: bool, dialect: str = "clickhouse") -> str:
     return SQL_SYSTEM.format(schema=schema_text, today=TODAY, dialect=NAMES.get(dialect, dialect),
                              dialect_hint=HINTS.get(dialect, ""),
                              clarify_rule=CLARIFY_RULE if allow_clarify else "")
 
 
-def fix_error(error: str, dialect: str = "sqlite") -> str:
+def fix_error(error: str, dialect: str = "clickhouse") -> str:
     return FIX_ERROR.format(error=error, dialect=NAMES.get(dialect, dialect))
 
 

@@ -9,7 +9,7 @@ Lệnh trong phiên: /role <admin|analyst|sales>, /reset (xóa lịch sử), /go
 import argparse
 import sys
 
-from t2sql.executor import format_table
+from t2sql.db import format_table
 from t2sql.llm import LLMError, default_llm
 from t2sql.logstore import QueryLogger
 from t2sql.pipeline import CONFIGS, TextToSQL

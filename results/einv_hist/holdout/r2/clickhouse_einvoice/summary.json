@@ -1,0 +1,87 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 44,
+  "configs": {
+    "norules": {
+      "n": 44,
+      "ex": 0.85,
+      "ex_lenient": 0.85,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.7857142857142857,
+        "hard": 0.8125,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 0,
+      "errors": {
+        "wrong_table": 2,
+        "date_function": 2,
+        "wrong_refusal": 1,
+        "wrong_filter": 1
+      },
+      "avg_latency_ms": 14032.90909090909,
+      "usage": {
+        "calls": 44,
+        "input_tokens": 160366,
+        "output_tokens": 3297,
+        "seconds": 278.0739251001505
+      }
+    },
+    "history": {
+      "n": 44,
+      "ex": 0.9,
+      "ex_lenient": 0.9,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.8571428571428571,
+        "hard": 0.875,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 1,
+      "errors": {
+        "date_function": 2,
+        "wrong_table": 1,
+        "other": 1
+      },
+      "avg_latency_ms": 12974.78409090909,
+      "usage": {
+        "calls": 45,
+        "input_tokens": 185691,
+        "output_tokens": 3480,
+        "seconds": 235.42907149996608
+      }
+    },
+    "lookup": {
+      "n": 44,
+      "ex": 0.9,
+      "ex_lenient": 0.9,
+      "by_difficulty": {
+        "easy": 1.0,
+        "medium": 0.7857142857142857,
+        "hard": 0.9375,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 0,
+      "retried": 2,
+      "errors": {
+        "wrong_table": 2,
+        "other": 1,
+        "date_function": 1
+      },
+      "avg_latency_ms": 7087.479545454545,
+      "usage": {
+        "calls": 46,
+        "input_tokens": 224789,
+        "output_tokens": 3437,
+        "seconds": 203.97578850015998
+      }
+    }
+  }
+}

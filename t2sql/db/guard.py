@@ -58,10 +58,10 @@ def check_ast(sql: str, policy: Policy, dialect: str, rules: GuardRules) -> set[
             raise SafetyError("Không được truy vấn bảng hệ thống.", "forbidden")
         tables.add(name)
     if policy.allowed_tables is not None:
-        bad = tables - policy.allowed_tables
+        bad = tables - {t.lower() for t in policy.allowed_tables}      # ClickHouse có bảng viết hoa (VATInvoice)
         if bad:
             raise SafetyError(f"Vai trò {policy.name} không được đọc bảng: {', '.join(sorted(bad))}.", "forbidden")
-    denied = {c for t, c in policy.denied_columns if t in tables}
+    denied = {c.lower() for t, c in policy.denied_columns if t.lower() in tables}
     if denied:
         used = {c.name.lower() for c in tree.find_all(exp.Column)}
         # chỉ tính `*` / `c.*` trong danh sách cột của SELECT, không tính COUNT(*)

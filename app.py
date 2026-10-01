@@ -12,35 +12,25 @@ from t2sql.viz import choose_view
 
 st.set_page_config(page_title="Text-to-SQL", page_icon="🗄️", layout="wide")
 
-EXAMPLES = [
-    "Doanh thu theo từng tháng trong năm 2025",
-    "Top 5 sản phẩm có doanh thu cao nhất",
-    "Còn năm 2024 thì sao?",
-    "Sản phẩm nào tốt nhất?",
-    "Liệt kê email của khách VIP",
-    "Xóa các đơn hàng bị hủy",
-]
+EXAMPLES = ["Có bao nhiêu bản ghi trong bảng lớn nhất?", "Còn năm ngoái thì sao?", "Xóa toàn bộ dữ liệu"]   # khi bộ dữ liệu không khai báo example_questions
 
 
 def database_choices():
     """T2SQL_DATABASE_URL (mặc định) + các T2SQL_DATABASE_URL_<TÊN> khác, ví dụ _CLICKHOUSE."""
-    names = {"postgres": "PostgreSQL", "postgresql": "PostgreSQL", "clickhouse": "ClickHouse",
-             "clickhouses": "ClickHouse", "clickhouse+https": "ClickHouse", "sqlite": "SQLite"}
-
-    def label(url):
-        if "://" not in url:
-            return "SQLite · shop"
-        kind = names.get(url.split("://", 1)[0].lower(), url.split("://", 1)[0])
+    def label(url, with_host=False):
         db = url.rsplit("/", 1)[-1].split("?", 1)[0]
-        return f"{kind} · {db}" if db else kind
+        text = f"ClickHouse · {db}" if db else "ClickHouse"
+        if with_host:      # hai server cùng tên database: thêm host để phân biệt (không in tài khoản / mật khẩu)
+            text += " @ " + url.split("@")[-1].split("/")[0]
+        return text
 
-    main = os.environ.get("T2SQL_DATABASE_URL", "").strip()
-    out = {label(main): main}
-    for k, v in sorted(os.environ.items()):
-        if k.startswith("T2SQL_DATABASE_URL_") and k != "T2SQL_DATABASE_URL_DOCKER" and v.strip():
-            name = label(v.strip())
-            out[name if name not in out else k.removeprefix("T2SQL_DATABASE_URL_").title()] = v.strip()
-    return out
+    urls = [os.environ.get("T2SQL_DATABASE_URL", "").strip()]
+    urls += [v.strip() for k, v in sorted(os.environ.items()) if k.startswith("T2SQL_DATABASE_URL_") and v.strip()]
+    out = {}
+    for u in urls:
+        if u and u not in out.values():
+            out[label(u) if label(u) not in out else label(u, with_host=True)] = u
+    return out or {"(chưa cấu hình T2SQL_DATABASE_URL)": ""}
 
 
 @st.cache_resource
@@ -67,7 +57,9 @@ with st.sidebar:
         st.error(f"Không khởi tạo được pipeline: {e}")
         st.stop()
     # Vai trò và câu hỏi gợi ý theo bộ dữ liệu của database đang chọn
-    role = st.selectbox("Vai trò người dùng", list(pipe.policies))
+    roles = list(pipe.policies)
+    # Mặc định vai trò hạn chế (analyst) nếu có: người dùng demo không vô tình xem được dữ liệu cá nhân
+    role = st.selectbox("Vai trò người dùng", roles, index=roles.index("analyst") if "analyst" in roles else 0)
     st.caption(pipe.policies[role].describe())
     if st.button("Xóa hội thoại") or st.session_state.get("db_label") != db_label:
         st.session_state.turns = []
@@ -75,7 +67,7 @@ with st.sidebar:
     st.session_state.db_label = db_label
     st.markdown("**Thử hỏi:**\n" + "\n".join(f"- {e}" for e in (pipe.dataset.example_questions or EXAMPLES)))
 
-st.title(pipe.dataset.docs.get("title") or "Hỏi dữ liệu bán hàng bằng tiếng Việt")
+st.title(pipe.dataset.docs.get("title") or "Hỏi dữ liệu bằng tiếng Việt")
 st.session_state.setdefault("turns", [])
 st.session_state.setdefault("history", [])
 st.sidebar.caption(f"Database: {pipe.backend.describe()} · Model: {getattr(pipe.llm, 'model', '?')}")

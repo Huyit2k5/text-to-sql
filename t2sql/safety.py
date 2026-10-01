@@ -1,6 +1,5 @@
 """Lớp an toàn (Mức 3): chỉ SELECT, một câu lệnh, phân quyền bảng/cột, che dữ liệu nhạy cảm."""
 import re
-import sqlite3
 from dataclasses import dataclass, field
 
 from .sql_utils import split_statements, strip_comments_and_strings
@@ -9,10 +8,8 @@ from .sql_utils import split_statements, strip_comments_and_strings
 # (ví dụ WITH x AS (DELETE ... RETURNING *) SELECT ...). REPLACE chỉ cấm dạng "REPLACE INTO",
 # vì replace() là hàm xử lý chuỗi hợp lệ.
 FORBIDDEN = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", r"REPLACE\s+INTO", "TRUNCATE", "MERGE",
-             "ATTACH", "DETACH", "PRAGMA", "VACUUM", "REINDEX", "ANALYZE", "GRANT", "REVOKE", "REFRESH"]
+             "ATTACH", "DETACH", "ANALYZE", "GRANT", "REVOKE", "REFRESH"]
 _FORBIDDEN_RE = re.compile(r"\b(" + "|".join(FORBIDDEN) + r")\b", re.I)
-# Hàm có thể dùng để tấn công/gây tốn tài nguyên trong SQLite.
-FORBIDDEN_FUNCS = {"load_extension", "randomblob", "zeroblob", "readfile", "writefile", "fts3_tokenizer"}
 
 WRITE_INTENT = re.compile(
     r"\b(xóa|xoá|sửa|cập nhật|thêm mới|chèn|đổi tên|tạo bảng|delete|update|insert|drop|alter|truncate)\b", re.I)
@@ -34,10 +31,6 @@ class Policy:
     allowed_tables: set[str] | None = None
     denied_columns: set[tuple[str, str]] = field(default_factory=set)
     mask_pii: bool = False
-    db_role: str | None = None      # role Postgres chỉ đọc tương ứng (GRANT khớp với policy này)
-
-    def __post_init__(self):
-        self.db_role = self.db_role or f"t2sql_{self.name}_ro"
 
     def describe(self) -> str:
         t = "mọi bảng" if self.allowed_tables is None else ", ".join(sorted(self.allowed_tables))
@@ -45,14 +38,8 @@ class Policy:
         return f"vai trò {self.name}: được đọc {t}; cột bị chặn: {d}"
 
 
-PII_COLUMNS = {("customers", "email"), ("customers", "phone")}
-
-POLICIES = {
-    "admin": Policy("admin"),
-    "analyst": Policy("analyst", denied_columns=set(PII_COLUMNS), mask_pii=True),
-    "sales": Policy("sales", allowed_tables={"orders", "order_items", "products", "suppliers"},
-                    mask_pii=True),
-}
+# Vai trò mặc định khi bộ dữ liệu không khai báo "policies" trong schema_docs.json.
+POLICIES = {"admin": Policy("admin")}
 
 
 def static_check(sql: str) -> str:
@@ -71,31 +58,6 @@ def static_check(sql: str) -> str:
     if m:
         raise SafetyError(f"Câu SQL chứa từ khóa bị cấm: {m.group(1).split()[0].upper()}.", "forbidden_keyword")
     return stmt
-
-
-def make_authorizer(policy: Policy, seen_tables: set):
-    """Authorizer của SQLite: được gọi lúc biên dịch câu lệnh, cho biết chính xác bảng/cột nào bị đọc."""
-    allowed_actions = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
-                       getattr(sqlite3, "SQLITE_RECURSIVE", 33)}
-
-    def auth(action, arg1, arg2, dbname, source):
-        if action not in allowed_actions:
-            return sqlite3.SQLITE_DENY
-        if action == sqlite3.SQLITE_FUNCTION:
-            return sqlite3.SQLITE_DENY if (arg2 or "").lower() in FORBIDDEN_FUNCS else sqlite3.SQLITE_OK
-        if action == sqlite3.SQLITE_READ:
-            table, col = arg1, arg2
-            if table and table.startswith("sqlite_"):
-                return sqlite3.SQLITE_DENY
-            if table:
-                seen_tables.add(table)
-                if policy.allowed_tables is not None and table not in policy.allowed_tables:
-                    return sqlite3.SQLITE_DENY
-                if (table, col) in policy.denied_columns:
-                    return sqlite3.SQLITE_DENY
-        return sqlite3.SQLITE_OK
-
-    return auth
 
 
 _EMAIL = re.compile(r"^([^@\s]{1,2})[^@\s]*(@.+)$")

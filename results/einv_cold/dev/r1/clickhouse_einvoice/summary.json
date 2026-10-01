@@ -1,0 +1,69 @@
+{
+  "model": "SDS-AI/softdream",
+  "reasoning": "none",
+  "database": "ClickHouse t2sql@127.0.0.1:8123/einvoice",
+  "n_items": 62,
+  "configs": {
+    "cold": {
+      "n": 62,
+      "ex": 0.5689655172413793,
+      "ex_lenient": 0.5862068965517241,
+      "by_difficulty": {
+        "easy": 0.8125,
+        "medium": 0.5909090909090909,
+        "hard": 0.35,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 4,
+      "errors": {
+        "wrong_columns": 1,
+        "other": 3,
+        "date_function": 5,
+        "business_logic": 6,
+        "wrong_filter": 5,
+        "wrong_table": 2,
+        "execution_error": 1,
+        "wrong_refusal": 1,
+        "wrong_aggregation": 1
+      },
+      "avg_latency_ms": 13381.117741935483,
+      "usage": {
+        "calls": 67,
+        "input_tokens": 228750,
+        "output_tokens": 5076,
+        "seconds": 725.8905012003379
+      }
+    },
+    "cold_history": {
+      "n": 62,
+      "ex": 0.8275862068965517,
+      "ex_lenient": 0.8620689655172413,
+      "by_difficulty": {
+        "easy": 0.9375,
+        "medium": 0.9545454545454546,
+        "hard": 0.6,
+        "unanswerable": 1.0
+      },
+      "refusal_acc": 1.0,
+      "exec_errors": 1,
+      "retried": 4,
+      "errors": {
+        "wrong_columns": 1,
+        "date_function": 3,
+        "business_logic": 2,
+        "wrong_aggregation": 2,
+        "wrong_filter": 1,
+        "execution_error": 1
+      },
+      "avg_latency_ms": 20317.47258064516,
+      "usage": {
+        "calls": 66,
+        "input_tokens": 256818,
+        "output_tokens": 5454,
+        "seconds": 780.7984071994433
+      }
+    }
+  }
+}
