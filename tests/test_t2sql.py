@@ -754,6 +754,21 @@ class TestReviewFixes(unittest.TestCase):
         self.assertTrue(all("p@" not in k and ":p" not in k for k in out), list(out))
 
     @needs_ev
+    def test_cost_limit_comes_from_dataset_docs_unless_env_overrides(self):
+        from unittest import mock
+        docs = dict(EV.docs, cost_guard_rows=123)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "schema_docs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(docs, f)
+            env = {k: v for k, v in os.environ.items() if k != "T2SQL_MAX_ESTIMATED_ROWS"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL, docs_path=path).cost_limit, 123)
+                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL).cost_limit, 40_000_000)
+            with mock.patch.dict(os.environ, {"T2SQL_MAX_ESTIMATED_ROWS": "7"}):
+                self.assertEqual(TextToSQL(scripted(["SELECT 1"]), "costguard", db=EINVOICE_URL, docs_path=path).cost_limit, 7)
+
+    @needs_ev
     def test_missing_fewshot_pool_runs_without_examples(self):
         pipe = TextToSQL(scripted(["SELECT count() FROM sellers"]), "history", db=EINVOICE_URL,
                          fewshot_path="khong_ton_tai.json")

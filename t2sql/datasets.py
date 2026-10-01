@@ -7,6 +7,8 @@ Mỗi database có một thư mục datasets/<tên database>/ với schema_docs.
                  "sales": {"allowed_tables": ["sellers", ...]}}
     "requires": {"invoice_items": ["invoices"]}      bảng luôn đi kèm khi schema linking chọn bảng này
     "no_sample_columns": [["buyers", "name"]]        cột không đưa giá trị mẫu vào prompt
+    "exclude_tables": ["orders_local"]              bảng không đưa vào schema (ví dụ bảng *_local của bảng Distributed)
+    "cost_guard_rows": 5000000                      ngưỡng số dòng dự kiến đọc cho cost_guard (mặc định 40 triệu)
     "example_questions": [...]                       câu hỏi gợi ý trên app
 """
 import json

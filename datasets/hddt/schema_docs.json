@@ -236,5 +236,6 @@
   "exclude_tables": [
     "VATInvoice_local",
     "ProductInv_local"
-  ]
+  ],
+  "cost_guard_rows": 5000000
 }

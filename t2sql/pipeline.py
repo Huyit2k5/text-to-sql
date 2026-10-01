@@ -213,7 +213,9 @@ class TextToSQL:
         self.linker = SchemaLinker(self.schema, top_k=self.config.linking_top_k) if self.config.use_linking else None
         self.lookups = self._load_lookups() if self.config.lookup_tables else {}
         self.history = self._load_history() if self.config.use_history else None
-        self.cost_limit = int(os.environ.get("T2SQL_MAX_ESTIMATED_ROWS") or self.config.cost_guard_rows)
+        # ngưỡng của bộ dữ liệu (docs "cost_guard_rows") theo cỡ server thật; biến môi trường ghi đè
+        self.cost_limit = int(os.environ.get("T2SQL_MAX_ESTIMATED_ROWS") or self.dataset.docs.get("cost_guard_rows")
+                              or self.config.cost_guard_rows)
         self.logger = logger
 
     def _load_history(self):

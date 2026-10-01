@@ -177,6 +177,93 @@
   "ordered": true
  },
  {
+  "id": "h29",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn hợp lệ theo cơ quan thuế trong tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = 1"
+ },
+ {
+  "id": "h30",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn không hợp lệ theo cơ quan thuế trong tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2"
+ },
+ {
+  "id": "h31",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn đang được cơ quan thuế kiểm tra trong tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -1"
+ },
+ {
+  "id": "h32",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn chưa gửi cơ quan thuế trong tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5)"
+ },
+ {
+  "id": "h33",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn điều chỉnh giảm trong tháng 5/2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND Type = 3"
+ },
+ {
+  "id": "h34",
+  "difficulty": "easy",
+  "question": "Có bao nhiêu hóa đơn thay thế trong năm 2025?",
+  "sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-01-01' AND ArisingDate < '2026-01-01' AND Type = 1"
+ },
+ {
+  "id": "h35",
+  "difficulty": "medium",
+  "question": "Số hóa đơn theo từng loại hóa đơn (gốc, thay thế, điều chỉnh) trong tháng 5/2025.",
+  "sql": "SELECT Type, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' GROUP BY Type"
+ },
+ {
+  "id": "h36",
+  "difficulty": "medium",
+  "question": "Tỷ lệ phần trăm hóa đơn không hợp lệ trong số các hóa đơn đã được cơ quan thuế kiểm tra (hợp lệ hoặc không hợp lệ) tháng 5/2025.",
+  "sql": "SELECT countIf(TCTCheckStatus = -2) * 100.0 / countIf(TCTCheckStatus IN (1, -2)) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'"
+ },
+ {
+  "id": "h37",
+  "difficulty": "medium",
+  "question": "Tổng số tiền thanh toán của các hóa đơn điều chỉnh giảm trong tháng 5/2025.",
+  "sql": "SELECT sum(Amount) FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND Type = 3"
+ },
+ {
+  "id": "h38",
+  "difficulty": "medium",
+  "question": "3 công ty có nhiều hóa đơn không hợp lệ nhất trong tháng 5/2025 (theo tên công ty), kèm số hóa đơn.",
+  "sql": "SELECT ComName, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2 GROUP BY ComName ORDER BY so_hd DESC LIMIT 3",
+  "ordered": true
+ },
+ {
+  "id": "h39",
+  "difficulty": "medium",
+  "question": "Thông báo lỗi nào của cơ quan thuế xuất hiện nhiều nhất ở các hóa đơn không hợp lệ trong tháng 5/2025?",
+  "sql": "SELECT TCTErrorMessage, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = -2 GROUP BY TCTErrorMessage ORDER BY so_hd DESC LIMIT 1",
+  "ordered": true
+ },
+ {
+  "id": "h40",
+  "difficulty": "hard",
+  "question": "Số hóa đơn hợp lệ theo cơ quan thuế của từng tháng trong quý 1 năm 2025.",
+  "sql": "SELECT toStartOfMonth(ArisingDate) AS thang, count() AS so_hd FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-01-01' AND ArisingDate < '2025-04-01' AND TCTCheckStatus = 1 GROUP BY thang ORDER BY thang",
+  "ordered": true
+ },
+ {
+  "id": "h41",
+  "difficulty": "hard",
+  "question": "Tổng số lượng hàng hóa trên các hóa đơn hợp lệ theo cơ quan thuế trong tháng 5/2025.",
+  "sql": "SELECT sum(p.Quantity) FROM ProductInv AS p FINAL INNER JOIN (SELECT ComID, id FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01' AND TCTCheckStatus = 1) AS v ON p.InvID = v.id AND p.ComID = v.ComID WHERE p.is_deleted = 0 AND p.InvArisingDate >= '2025-05-01' AND p.InvArisingDate < '2025-06-01'"
+ },
+ {
+  "id": "h42",
+  "difficulty": "hard",
+  "question": "Trong tháng 5/2025, tỷ lệ phần trăm hóa đơn điều chỉnh giảm trên tổng số hóa đơn.",
+  "sql": "SELECT countIf(Type = 3) * 100.0 / count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01'"
+ },
+ {
   "id": "u01",
   "difficulty": "unanswerable",
   "expect": "cannot",
@@ -195,6 +282,13 @@
   "difficulty": "unanswerable",
   "expect": "cannot",
   "question": "Khách hàng nào hài lòng nhất với dịch vụ hóa đơn?",
+  "sql": null
+ },
+ {
+  "id": "u04",
+  "difficulty": "unanswerable",
+  "expect": "cannot",
+  "question": "Có bao nhiêu hóa đơn đã bị hủy trong tháng 5/2025?",
   "sql": null
  }
 ]
