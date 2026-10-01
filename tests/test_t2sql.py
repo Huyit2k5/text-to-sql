@@ -155,6 +155,17 @@ class TestSafety(unittest.TestCase):
 
 
 class TestEvaluation(unittest.TestCase):
+    def test_lenient_mode_treats_month_spellings_as_the_same_answer(self):
+        gold = [("2025-01-01", 5), ("2025-02-01", 6)]
+        pred = [("2025-01", 5), ("2025-02", 6)]
+        self.assertFalse(results_match(pred, gold))                       # chấm chính thức vẫn khắt khe
+        self.assertTrue(results_match(pred, gold, allow_extra_columns=True))
+        self.assertTrue(results_match([(3, 10)], [("2025-03-01", 10)], allow_extra_columns=True))
+        self.assertTrue(results_match([("2025-03-01T00:00:00", 1)], [("2025-03-01", 1)], allow_extra_columns=True))
+        self.assertFalse(results_match([(4, 10)], [("2025-03-01", 10)], allow_extra_columns=True))
+        self.assertFalse(results_match([("2025-03-15", 1)], [("2025-03", 1)], allow_extra_columns=True))
+        self.assertFalse(results_match([("2025-04", 5), ("2025-02", 6)], gold, allow_extra_columns=True))
+
     def test_order_and_column_permutation(self):
         gold = [("a", 1), ("b", 2)]
         self.assertTrue(results_match([(2, "b"), (1, "a")], gold))
@@ -931,6 +942,37 @@ class TestSelfConsistency(unittest.TestCase):
 class TestClickHouseOffline(unittest.TestCase):
     """Phần không cần server: kiểm tra AST, đọc lỗi."""
 
+    def test_schema_is_cached_on_disk_and_invalidated_when_docs_change(self):
+        from unittest import mock
+        from t2sql.db.clickhouse import ClickHouseBackend
+        from t2sql.schema import Column, Schema, Table
+        def fake():
+            return Schema({"VATInvoice": Table("VATInvoice", [Column("Amount", "Decimal(21, 6)", False, None, "Tiền", [1, "a"])],
+                                               "Hóa đơn", 5, "hóa đơn")}, ["rule"], {"c": ["VATInvoice"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = os.path.join(tmp, "docs.json")
+            with open(docs, "w", encoding="utf-8") as f:
+                f.write('{"a": 1}')
+            be = ClickHouseBackend("clickhouse://u:p@ch.local:8123/hddt?single_user=1")
+            with mock.patch.dict(os.environ, {"T2SQL_CACHE_DIR": os.path.join(tmp, "cache"), "T2SQL_SCHEMA_CACHE_HOURS": "24"}):
+                with mock.patch.object(ClickHouseBackend, "_load_schema", side_effect=lambda *a, **k: fake()) as loader:
+                    first = be.load_schema(docs)
+                    second = be.load_schema(docs)
+                    self.assertEqual(loader.call_count, 1)                    # lần hai đọc từ đệm
+                    col = second.tables["VATInvoice"].columns[0]
+                    self.assertEqual((col.name, col.type, col.samples, second.business_rules, second.concepts),
+                                     ("Amount", "Decimal(21, 6)", [1, "a"], ["rule"], {"c": ["VATInvoice"]}))
+                    self.assertEqual(second.tables["VATInvoice"].row_count, 5)
+                    with open(docs, "w", encoding="utf-8") as f:
+                        f.write('{"a": 2}')
+                    be.load_schema(docs)
+                    self.assertEqual(loader.call_count, 2)                    # đổi tài liệu thì nạp lại
+            with mock.patch.dict(os.environ, {"T2SQL_CACHE_DIR": os.path.join(tmp, "cache"), "T2SQL_SCHEMA_CACHE_HOURS": "0"}):
+                with mock.patch.object(ClickHouseBackend, "_load_schema", side_effect=lambda *a, **k: fake()) as loader:
+                    be.load_schema(docs)
+                    be.load_schema(docs)
+                    self.assertEqual(loader.call_count, 2)                    # tắt đệm
+
     def test_single_user_url_uses_the_account_for_every_role(self):
         from t2sql.db.clickhouse import ClickHouseBackend
         shared = ClickHouseBackend("clickhouses://huy:p%40ss@ch.congty.vn/sales?single_user=1")
@@ -999,6 +1041,38 @@ class TestClickHouseOffline(unittest.TestCase):
 
 
 class TestDatasets(unittest.TestCase):
+    def test_hddt_fewshot_pool_is_separate_from_both_eval_sets(self):
+        ds = datasets.for_database("hddt")
+        def questions(path):
+            with open(path, encoding="utf-8") as f:
+                return {i["question"] for i in json.load(f)}
+        pool = questions(ds.fewshot_path)
+        for name in ("eval.json", "eval_holdout.json"):
+            self.assertFalse(pool & questions(os.path.join(os.path.dirname(ds.fewshot_path), name)), name)
+        self.assertFalse(questions(os.path.join(os.path.dirname(ds.fewshot_path), "eval.json"))
+                         & questions(os.path.join(os.path.dirname(ds.fewshot_path), "eval_holdout.json")))
+
+    def test_hddt_analyst_cannot_read_personal_columns_but_admin_can(self):
+        from t2sql.db.clickhouse import ast_check
+        ds = datasets.for_database("hddt")
+        analyst, admin = ds.policies["analyst"], ds.policies["admin"]
+        self.assertTrue(analyst.mask_pii and not admin.mask_pii)
+        for sql in ("SELECT CusPhone FROM VATInvoice", "SELECT cusemails FROM VATInvoice",
+                    "SELECT * FROM VATInvoice", "SELECT v.Buyer FROM VATInvoice AS v FINAL",
+                    "SELECT count() FROM VATInvoice_local"):
+            with self.assertRaises(SafetyError, msg=sql):
+                ast_check(sql, analyst)
+        ok = "SELECT ComName, sum(Amount) FROM VATInvoice FINAL WHERE is_deleted = 0 GROUP BY ComName"
+        self.assertEqual(ast_check(ok, analyst), {"vatinvoice"})
+        self.assertEqual(ast_check("SELECT CusPhone FROM VATInvoice", admin), {"vatinvoice"})
+        # model không được thấy cột bị chặn trong schema của vai trò analyst
+        from t2sql.schema import Schema, Table, Column
+        schema = Schema({"VATInvoice": Table("VATInvoice", [Column("ComName", "String", False, None, ""),
+                                                           Column("CusPhone", "String", False, None, "")], "", 0, "")}, [], {})
+        shown = schema.without_columns(analyst.denied_columns).render()
+        self.assertIn("ComName", shown)
+        self.assertNotIn("CusPhone", shown)
+
     """Bộ dữ liệu theo tên database: datasets/<tên>/schema_docs.json (bắt buộc)."""
 
     def test_lookup_by_database_name(self):

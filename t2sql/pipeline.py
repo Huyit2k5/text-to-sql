@@ -91,8 +91,29 @@ CONFIGS = {
     "production_plain": Config("production_plain", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
                                guard_write_intent=True),
+    # production không dùng few-shot: đo riêng tác dụng của ví dụ mẫu (bộ dữ liệu mới thường chưa có)
+    "production_nofs": Config("production_nofs", use_docs=True, use_fewshot=False, use_linking=True, max_retries=3,
+                              shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                              guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
+    # production với tài liệu schema bản cũ (schema_docs.v1.json): đo tác dụng của lần bổ sung định nghĩa nghiệp vụ
+    "production_docsv1": Config("production_docsv1", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                docs_variant="v1"),
+    # production với tài liệu schema v3 (trước khi bổ sung nghĩa Status / Type suy ra từ ghi chú trên hóa đơn)
+    "production_docsv3": Config("production_docsv3", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                docs_variant="v3"),
+    # production với self-consistency (3 phương án)
+    "production_sc": Config("production_sc", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                            shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                            guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                            n_candidates=3),
+    # explain=False: giải thích SQL là một lần gọi model thứ hai (đo trên hddt: 3,9 giây, 57% thời gian một câu hỏi).
+    # Giao diện vẫn có nút bật; các cấu hình so sánh phía trên giữ explain=True để kết quả lịch sử không đổi.
     "production": Config("production", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
-                         shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                         shape_check=True, allow_clarify=True, rewrite_followups=True, explain=False,
                          guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
 }
 ABLATION_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect"]

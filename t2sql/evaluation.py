@@ -29,19 +29,35 @@ def _key(v):
     return (0, v) if isinstance(v, (int, float)) else (1, str(v))
 
 
-def _close(a, b):
+# Chế độ nới lỏng: tháng viết "2025-03", ngày đầu tháng "2025-03-01" hoặc số tháng 3 là cùng một đáp án.
+_MONTH = re.compile(r"^(\d{4})-(\d{2})(?:-01(?:[T ]00:00:00(?:\.0+)?)?)?$")
+
+
+def _month_of(v):
+    m = _MONTH.match(v) if isinstance(v, str) else None
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _close(a, b, lenient=False):
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return math.isclose(a, b, rel_tol=1e-4, abs_tol=1e-2)
+    if lenient:
+        ma, mb = _month_of(a), _month_of(b)
+        if ma and mb:
+            return ma == mb
+        for x, y in ((a, mb), (b, ma)):
+            if y and isinstance(x, int) and not isinstance(x, bool) and 1 <= x <= 12:
+                return x == y[1]
     return a == b
 
 
-def _rows_equal(pred, gold, ordered):
+def _rows_equal(pred, gold, ordered, lenient=False):
     if len(pred) != len(gold):
         return False
     if not ordered:
         pred = sorted(pred, key=lambda r: tuple(_key(v) for v in r))
         gold = sorted(gold, key=lambda r: tuple(_key(v) for v in r))
-    return all(len(p) == len(g) and all(_close(a, b) for a, b in zip(p, g)) for p, g in zip(pred, gold))
+    return all(len(p) == len(g) and all(_close(a, b, lenient) for a, b in zip(p, g)) for p, g in zip(pred, gold))
 
 
 def results_match(pred_rows, gold_rows, ordered=False, allow_extra_columns=False) -> bool:
@@ -50,7 +66,8 @@ def results_match(pred_rows, gold_rows, ordered=False, allow_extra_columns=False
     - Không quan tâm tên cột; cho phép hoán vị cột.
     - Không quan tâm thứ tự dòng, trừ khi câu hỏi yêu cầu thứ tự (ordered=True).
     - Số thực so với sai số tương đối 1e-4 (bỏ qua khác biệt do ROUND, thứ tự cộng).
-    - allow_extra_columns=True: chấp nhận khi kết quả dự đoán có thêm cột (chỉ số phụ, "lenient").
+    - allow_extra_columns=True ("lenient"): chấp nhận khi kết quả dự đoán có thêm cột (chỉ số phụ), và coi
+      "2025-03", "2025-03-01", số tháng 3 là cùng một tháng.
     """
     pred = [tuple(_canon(v) for v in r) for r in pred_rows]
     gold = [tuple(_canon(v) for v in r) for r in gold_rows]
@@ -62,10 +79,10 @@ def results_match(pred_rows, gold_rows, ordered=False, allow_extra_columns=False
     if pc < gc or (pc > gc and not allow_extra_columns):
         return False
     if pc > 8:  # tránh bùng nổ tổ hợp
-        return pc == gc and _rows_equal(pred, gold, ordered)
+        return pc == gc and _rows_equal(pred, gold, ordered, allow_extra_columns)
     for perm in itertools.permutations(range(pc), gc):
         proj = [tuple(r[i] for i in perm) for r in pred]
-        if _rows_equal(proj, gold, ordered):
+        if _rows_equal(proj, gold, ordered, allow_extra_columns):
             return True
     return False
 

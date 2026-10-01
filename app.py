@@ -57,7 +57,9 @@ with st.sidebar:
         st.error(f"Không khởi tạo được pipeline: {e}")
         st.stop()
     # Vai trò và câu hỏi gợi ý theo bộ dữ liệu của database đang chọn
-    role = st.selectbox("Vai trò người dùng", list(pipe.policies))
+    roles = list(pipe.policies)
+    # Mặc định vai trò hạn chế (analyst) nếu có: người dùng demo không vô tình xem được dữ liệu cá nhân
+    role = st.selectbox("Vai trò người dùng", roles, index=roles.index("analyst") if "analyst" in roles else 0)
     st.caption(pipe.policies[role].describe())
     if st.button("Xóa hội thoại") or st.session_state.get("db_label") != db_label:
         st.session_state.turns = []

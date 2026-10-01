@@ -9,9 +9,8 @@ Chỉ hỗ trợ ClickHouse (các backend SQLite và PostgreSQL đã được g�
 ```bash
 pip install -r requirements.txt
 # mở file .env, điền LLM_BASE_URL, LLM_API_KEY, T2SQL_MODEL (model tự host) hoặc ANTHROPIC_API_KEY (Claude),
-# CLICKHOUSE_PASSWORD, T2SQL_CH_PASSWORD và T2SQL_DATABASE_URL (xem .env.example)
-docker compose up -d clickhouse         # ClickHouse + user chỉ đọc
-python datasets/einvoice/generate.py    # sinh database demo einvoice (~100 triệu dòng, ~5 phút, ~6 GB; --scale 0.02 cho bản nhỏ)
+# T2SQL_DATABASE_URL_CONGTY và T2SQL_DATABASE_URL (ClickHouse của công ty, database hddt; xem .env.example)
+python connect_company.py               # kiểm tra kết nối, quyền, giới hạn; --init tạo datasets/<database>/ cho database mới
 
 python cli.py                           # Mức 1: hỏi-đáp trên terminal
 python cli.py --config production       # Mức 3: nhiều lượt, hỏi lại, giải thích, phân quyền
@@ -19,15 +18,15 @@ streamlit run app.py                    # demo web
 
 python evaluate.py --configs baseline   # baseline accuracy (Mức 1)
 python evaluate.py --configs all        # bảng ablation (Mức 2) -> results/clickhouse*/report.md
-python -m unittest -v                   # 101 test, không gọi API (cần database einvoice; không có thì các test đó bị bỏ qua)
+python -m unittest -v                   # 113 test, không gọi API (các test cần database einvoice giả lập tự bỏ qua nếu không có)
 python evaluate.py --configs all --oracle   # tự kiểm tra harness chấm điểm, không gọi API
 ```
 
 ## Chạy bằng Docker
 
 ```bash
-docker compose up -d --build            # ClickHouse + app, mở http://localhost:8501
-docker compose ps                       # cả hai service phải "healthy"
+docker compose up -d --build app        # app nối tới ClickHouse công ty (T2SQL_DATABASE_URL_DOCKER hoặc _CONGTY), mở http://localhost:8501
+docker compose ps                       # service app phải "healthy"
 docker compose logs -f app
 
 docker compose exec app python evaluate.py --configs all     # chấm điểm trên database mặc định
@@ -35,8 +34,8 @@ docker compose exec app python cli.py --config production    # CLI trong contain
 
 python profile_clickhouse.py            # đo Duration, Read Rows, Memory, CPU từ system.query_log (chạy trên máy host)
 
-docker compose down                     # dừng, giữ dữ liệu
-docker compose down -v                  # dừng và xóa dữ liệu (kể cả database einvoice; sinh lại bằng generate.py)
+docker compose down                     # dừng
+docker compose down -v                  # dừng và xóa volume ClickHouse cục bộ (nếu có dùng profile demo)
 ```
 
 | Service | Nội dung |
@@ -87,13 +86,27 @@ Dùng `127.0.0.1`, không dùng `localhost`: trên Windows, `localhost` thử IP
 3. Đặt `T2SQL_DATABASE_URL` (hoặc `T2SQL_DATABASE_URL_DOCKER` khi chạy trong Docker; khi đó không cần service `clickhouse`).
 4. Với bảng lớn, chỉnh `max_rows_to_read` / `max_memory_usage` trong profile cho vừa cluster.
 
-## Hóa đơn điện tử giả lập trên ClickHouse (`einvoice`, ~100 triệu dòng)
+## Database thật của công ty: `hddt`
 
-Database demo duy nhất của dự án, dùng để thử ở quy mô và độ phức tạp gần với dữ liệu thật. Mọi thứ nằm trong [datasets/einvoice/](datasets/einvoice/).
+Bộ dữ liệu nằm ở [datasets/hddt/](datasets/hddt/): `schema_docs.json` (mô tả cột, quy tắc nghiệp vụ, phân quyền `admin` / `analyst`),
+`eval.json` (46 câu) và `eval_holdout.json` (21 câu), `fewshot_pool.json`, [huong_dan_demo.md](datasets/hddt/huong_dan_demo.md) và
+[cau_hoi_can_xac_nhan.md](datasets/hddt/cau_hoi_can_xac_nhan.md) (những điều cần người hiểu dữ liệu xác nhận).
+Database `einvoice` giả lập cũ đã được xóa khỏi môi trường; mã sinh dữ liệu và bộ đánh giá vẫn giữ ở [datasets/einvoice/](datasets/einvoice/).
 
 ```bash
-docker compose up -d clickhouse
+python evaluate.py --configs production --workers 2            # chấm điểm trên database mặc định (hddt); đừng chạy quá nhiều luồng trên server dùng chung
+python evaluate.py --configs production --dataset datasets/hddt/eval_holdout.json
+```
+
+## Hóa đơn điện tử giả lập trên ClickHouse (`einvoice`, ~100 triệu dòng; tùy chọn)
+
+Database giả lập dùng để chạy bộ test đầy đủ và thử nghiệm ở quy mô lớn mà không cần chạm vào dữ liệu thật. **Hiện không còn trong môi trường**;
+sinh lại khi cần. Mọi thứ nằm trong [datasets/einvoice/](datasets/einvoice/).
+
+```bash
+docker compose --profile demo up -d clickhouse
 python datasets/einvoice/generate.py              # ~5 phút, ~6 GB; --scale 0.02 để sinh bản nhỏ
+# đặt T2SQL_DATABASE_URL_EINVOICE trong .env (xem .env.example), rồi:
 python evaluate.py --db "$T2SQL_DATABASE_URL_EINVOICE" --configs baseline docs fewshot linking selfcorrect shapecheck
 python profile_clickhouse.py --db "$T2SQL_DATABASE_URL_EINVOICE"
 ```

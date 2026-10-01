@@ -134,6 +134,46 @@ class ClickHouseBackend(Backend):
 
     # ------------------------------------------------------------------ schema
     def load_schema(self, docs_path=None, n_samples: int = 3):
+        """Như _load_schema nhưng lưu đệm vào .cache/ (mặc định 24 giờ, T2SQL_SCHEMA_CACHE_HOURS=0 để tắt):
+        database lớn có hàng trăm cột nên lấy giá trị mẫu mất cả chục giây mỗi lần khởi động."""
+        import hashlib
+        import json
+
+        from ..schema import Column, Schema, Table
+        hours = float(os.environ.get("T2SQL_SCHEMA_CACHE_HOURS", "24") or 0)
+        if hours <= 0:
+            return self._load_schema(docs_path, n_samples)
+        docs_text = ""
+        if docs_path:
+            with open(docs_path, encoding="utf-8") as f:
+                docs_text = f.read()
+        key = hashlib.sha256(f"{self.host}:{self.port}/{self.database}|{n_samples}|{docs_text}".encode()).hexdigest()[:20]
+        path = os.path.join(os.environ.get("T2SQL_CACHE_DIR") or os.path.join(os.path.dirname(__file__), "..", "..", ".cache"),
+                            f"schema_{self.database}_{key}.json")
+        try:
+            if time.time() - os.path.getmtime(path) < hours * 3600:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                tables = {n: Table(n, [Column(**c) for c in t["columns"]], t["description"], t["row_count"], t["keywords"])
+                          for n, t in data["tables"].items()}
+                return Schema(tables, data["business_rules"], data["concepts"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass                                  # chưa có đệm / đệm hỏng: nạp lại từ database
+        schema = self._load_schema(docs_path, n_samples)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            data = {"tables": {n: {"description": t.description, "row_count": t.row_count, "keywords": t.keywords,
+                                   "columns": [vars(c) for c in t.columns]} for n, t in schema.tables.items()},
+                    "business_rules": schema.business_rules, "concepts": schema.concepts}
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, default=str)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+        return schema
+
+    def _load_schema(self, docs_path=None, n_samples: int = 3):
         """Đọc schema qua system.columns / system.tables (chỉ thấy bảng user admin được GRANT).
         Mô tả lấy từ docs JSON, thiếu thì lấy COMMENT. Khóa ngoại lấy từ mục "relations" của docs."""
         import json

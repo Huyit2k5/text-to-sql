@@ -809,8 +809,12 @@ def month_count(idx, m, scale):
 
 def admin_client():
     import clickhouse_connect
-    url = os.environ.get("T2SQL_DATABASE_URL_EINVOICE") or os.environ.get("T2SQL_DATABASE_URL") or "clickhouse://x@127.0.0.1:8123/einvoice"
+    # Không dùng T2SQL_DATABASE_URL: biến đó trỏ tới ClickHouse thật của công ty, còn script này tạo / XÓA database.
+    url = os.environ.get("T2SQL_DATABASE_URL_EINVOICE") or "clickhouse://x@127.0.0.1:8123/einvoice"
     u = urlsplit(url)
+    if (u.hostname or "127.0.0.1") not in ("127.0.0.1", "localhost", "::1", "clickhouse"):
+        sys.exit(f"Từ chối chạy: {u.hostname} không phải ClickHouse cục bộ. generate.py chỉ chạy trên máy local / container "
+                 "demo vì nó tạo và xóa database.")
     return clickhouse_connect.get_client(
         host=u.hostname or "127.0.0.1", port=u.port or 8123, secure=u.scheme == "clickhouses",
         username=os.environ.get("CLICKHOUSE_USER") or "default", password=os.environ.get("CLICKHOUSE_PASSWORD", ""),
