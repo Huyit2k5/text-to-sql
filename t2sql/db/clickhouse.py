@@ -10,13 +10,21 @@ ClickHouse không có transaction/ROLLBACK, nên an toàn dựa vào quyền c�
 
 URL: clickhouse://<tiền tố user>:<mật khẩu>@host:8123/<database>   (clickhouses:// cho HTTPS)
 User thực tế = T2SQL_CH_USER_TEMPLATE (mặc định "{user}_{role}"), ví dụ t2sql -> t2sql_analyst.
-Dùng một user chung cho mọi vai trò: đặt T2SQL_CH_USER_TEMPLATE="{user}".
+Dùng một user chung cho mọi vai trò (ClickHouse có sẵn của công ty): thêm ?single_user=1 vào URL
+(hoặc đặt T2SQL_CH_USER_TEMPLATE="{user}" cho mọi URL).
+
+User chỉ có quyền đọc và không được đổi setting (readonly=1): ClickHouse từ chối max_execution_time /
+max_result_rows gửi kèm truy vấn. Khi gặp lỗi đó backend chuyển sang "chế độ hạn chế": không gửi setting nữa,
+đọc kết quả dạng luồng và dừng sau max_rows dòng. Giới hạn thời gian khi đó chỉ là phía client (truy vấn vẫn có thể
+chạy tiếp trên server), nên cần nhờ DBA gắn profile giới hạn cho user này.
 """
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
-from urllib.parse import unquote, urlsplit
+from itertools import islice
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..safety import POLICIES, Policy, SafetyError, mask_value, static_check
 from .base import Backend, ExecResult, normalize_value
@@ -56,6 +64,16 @@ ERROR_HINTS = {
         "Date/DateTime; cột Nullable dùng assumeNotNull hoặc coalesce.",
     53: "Kiểu dữ liệu không khớp: ép kiểu rõ ràng; so sánh cột Enum bằng tên giá trị dạng chuỗi.",
 }
+def _is_readonly_setting_error(e: Exception) -> bool:
+    """User readonly=1 không được đổi setting: server báo mã 164 / 452, còn clickhouse-connect tự chặn phía client
+    với thông báo "Setting ... is readonly"."""
+    return _error_parts(e)[0] in _READONLY_CODES or bool(re.search(r"setting .{0,60} is readonly", str(e), re.I))
+
+
+class _Restricted(Exception):
+    """Dấu hiệu nội bộ: chuyển sang chế độ hạn chế."""
+
+
 _CODE_RE = re.compile(r"Code: (\d+)")
 _MSG_RE = re.compile(r"DB::Exception: (.*?)(?:\s*\(version [\d.]+.*|\s*$)", re.S)
 
@@ -90,7 +108,9 @@ class ClickHouseBackend(Backend):
         self.password = unquote(u.password or "")
         self.database = (u.path or "/").strip("/") or "default"
         self.database_name = self.database
-        self.user_template = os.environ.get("T2SQL_CH_USER_TEMPLATE") or "{user}_{role}"
+        single = parse_qs(u.query).get("single_user", ["0"])[0].lower() in ("1", "true", "yes")
+        self.user_template = "{user}" if single else (os.environ.get("T2SQL_CH_USER_TEMPLATE") or "{user}_{role}")
+        self.restricted = False      # True: user không được đổi setting (readonly=1), xem docstring
         self._clients = {}
         self._lock = threading.Lock()
 
@@ -125,6 +145,7 @@ class ClickHouseBackend(Backend):
                 docs = json.load(f)
         tdocs, rel = docs.get("tables", {}), docs.get("relations", {})
         no_sample = NO_SAMPLE_COLUMNS | {tuple(c) for c in docs.get("no_sample_columns", [])}
+        skip = set(docs.get("exclude_tables", []))       # ví dụ bảng *_local của bảng Distributed
         client = self._client(POLICIES["admin"])
         p = {"db": self.database}
         meta = {r[0]: r[1:] for r in client.query(
@@ -133,8 +154,10 @@ class ClickHouseBackend(Backend):
         cols = client.query(
             "SELECT table, name, type, comment, is_in_primary_key FROM system.columns "
             "WHERE database = {db:String} ORDER BY table, position", parameters=p).result_rows
-        tables = {}
+        tables, to_sample = {}, []
         for tname, cname, ctype, ccomment, in_pk in cols:
+            if tname in skip:
+                continue
             tdoc = tdocs.get(tname, {})
             if tname not in tables:
                 tcomment, nrows = meta.get(tname, ("", 0))
@@ -145,11 +168,17 @@ class ClickHouseBackend(Backend):
             pk = bool(in_pk) and cname.endswith("_id") and not fk
             col = Column(cname, ctype, pk, fk, tdoc.get("columns", {}).get(cname) or ccomment or "")
             if (tname, cname) not in no_sample and not pk and not fk and not ctype.startswith("AggregateFunction"):
-                q = (f"SELECT DISTINCT `{cname}` FROM (SELECT `{cname}` FROM `{self.database}`.`{tname}` "
-                     f"WHERE `{cname}` IS NOT NULL LIMIT 5000) LIMIT 50")
-                vals = [normalize_value(r[0]) for r in client.query(q).result_rows]
-                col.samples = [v for v in vals if not (isinstance(v, str) and len(v) > MAX_SAMPLE_LEN)][:n_samples]
+                to_sample.append((tname, col))
             tables[tname].columns.append(col)
+        def sample(item):
+            tname, col = item
+            q = (f"SELECT DISTINCT `{col.name}` FROM (SELECT `{col.name}` FROM `{self.database}`.`{tname}` "
+                 f"WHERE `{col.name}` IS NOT NULL LIMIT 5000) LIMIT 50")
+            vals = [normalize_value(r[0]) for r in client.query(q).result_rows]
+            col.samples = [v for v in vals if not (isinstance(v, str) and len(v) > MAX_SAMPLE_LEN)][:n_samples]
+
+        with ThreadPoolExecutor(max_workers=8) as pool:          # nhiều cột: lấy mẫu song song
+            list(pool.map(sample, to_sample))
         return Schema(tables, docs.get("business_rules", []), docs.get("concepts", {}))
 
     # ------------------------------------------------------------------ ước lượng chi phí
@@ -161,13 +190,19 @@ class ClickHouseBackend(Backend):
             sql_text = static_check(sql_text)
             ast_check(sql_text, policy, self.dialect)
             rows = self._client(policy).query("EXPLAIN ESTIMATE " + sql_text.rstrip("; \n"),
-                                              settings={"max_execution_time": 10}).result_rows
+                                              settings={} if self.restricted else {"max_execution_time": 10}).result_rows
         except Exception:
             return None
         per_table = {}
         for r in rows:            # database, table, parts, rows, marks
             per_table[r[1]] = per_table.get(r[1], 0) + int(r[3])
         return sum(per_table.values()), per_table
+
+    def _run_streaming(self, client, sql_text: str):
+        """Chạy không kèm setting và chỉ lấy tối đa max_rows + 1 dòng đầu."""
+        with client.query_rows_stream(sql_text) as stream:
+            cols = list(stream.source.column_names)
+            return cols, list(islice(stream, self.max_rows + 1))
 
     # ------------------------------------------------------------------ run
     def run(self, sql_text: str, policy: Policy | None = None, safe: bool = True,
@@ -186,9 +221,20 @@ class ClickHouseBackend(Backend):
                     "max_result_rows": self.max_rows + 1, "result_overflow_mode": "break",
                     "log_comment": log_comment[:200]}
         try:
-            res = self._client(policy if safe else POLICIES["admin"]).query(sql_text.rstrip("; \n"),
-                                                                           settings=settings)
-            cols, rows = list(res.column_names), res.result_rows
+            client = self._client(policy if safe else POLICIES["admin"])
+            sql_text = sql_text.rstrip("; "+chr(10))
+            try:
+                if self.restricted:
+                    raise _Restricted()
+                res = client.query(sql_text, settings=settings)
+                cols, rows = list(res.column_names), res.result_rows
+            except _Restricted:
+                cols, rows = self._run_streaming(client, sql_text)
+            except Exception as e:
+                if not _is_readonly_setting_error(e):
+                    raise
+                self.restricted = True
+                cols, rows = self._run_streaming(client, sql_text)
         except Exception as e:  # clickhouse_connect.driver.exceptions.*
             from clickhouse_connect.driver.exceptions import OperationalError
             code, msg = _error_parts(e)

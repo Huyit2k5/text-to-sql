@@ -727,6 +727,39 @@ class TestReviewFixes(unittest.TestCase):
         self.assertEqual(tables_in_sql('SELECT 1 FROM einvoice.invoices o JOIN "einvoice"."sellers" c ON 1'), {"invoices", "sellers"})
         self.assertEqual(tables_in_sql("SELECT 1"), set())
 
+    def test_percent_with_a_space_after_a_number_is_still_a_filter_value(self):
+        from t2sql.checks import _PERCENT
+        for q in ("thuế suất 5%", "thuế suất 5 %", "giảm 10,5 %"):
+            self.assertFalse(_PERCENT.search(q), q)
+        for q in ("tỷ lệ % hóa đơn", "chiếm bao nhiêu %", "phần trăm hóa đơn"):
+            self.assertTrue(_PERCENT.search(q), q)
+
+    def test_rename_as_an_alias_is_allowed_but_rename_statement_is_not(self):
+        self.assertEqual(static_check("SELECT 1 AS rename"), "SELECT 1 AS rename")
+        for sql in ("RENAME TABLE a TO b", "SELECT 1; RENAME TABLE a TO b"):
+            self.assertRaises(SafetyError, static_check, sql)
+
+    def test_database_choices_keeps_two_servers_with_the_same_database_name(self):
+        import importlib.util, os, sys
+        from unittest import mock
+        src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+        start = src.index("def database_choices")
+        ns = {"os": os}
+        exec(src[start:src.index("@st.cache_resource")], ns)
+        env = {"T2SQL_DATABASE_URL": "clickhouse://u:p@a.local:8123/einvoice",
+               "T2SQL_DATABASE_URL_B": "clickhouse://u:p@b.local:8123/einvoice"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            out = ns["database_choices"]()
+        self.assertEqual(len(out), 2)
+        self.assertTrue(all("p@" not in k and ":p" not in k for k in out), list(out))
+
+    @needs_ev
+    def test_missing_fewshot_pool_runs_without_examples(self):
+        pipe = TextToSQL(scripted(["SELECT count() FROM sellers"]), "history", db=EINVOICE_URL,
+                         fewshot_path="khong_ton_tai.json")
+        self.assertIsNone(pipe.retriever)
+        self.assertEqual(pipe.ask("Có bao nhiêu doanh nghiệp?").kind, "result")
+
     def test_quoted_table_is_not_flagged_as_missing_from(self):
         ans = TextToSQL(scripted(['SELECT COUNT(*) FROM "sellers"']), "shapecheck").ask("Có bao nhiêu doanh nghiệp?")
         self.assertEqual(ans.attempts[0].issues, [])
@@ -882,6 +915,32 @@ class TestSelfConsistency(unittest.TestCase):
 
 class TestClickHouseOffline(unittest.TestCase):
     """Phần không cần server: kiểm tra AST, đọc lỗi."""
+
+    def test_single_user_url_uses_the_account_for_every_role(self):
+        from t2sql.db.clickhouse import ClickHouseBackend
+        shared = ClickHouseBackend("clickhouses://huy:p%40ss@ch.congty.vn/sales?single_user=1")
+        self.assertEqual(shared.username(POL["admin"]), "huy")
+        self.assertEqual(shared.username(POL["analyst"]), "huy")
+        self.assertEqual((shared.secure, shared.port, shared.password, shared.database), (True, 8443, "p@ss", "sales"))
+        demo = ClickHouseBackend("clickhouse://t2sql:x@127.0.0.1:8123/einvoice")
+        self.assertEqual(demo.username(POL["analyst"]), "t2sql_analyst")
+
+    def test_policy_table_and_column_names_are_case_insensitive(self):
+        from t2sql.db.clickhouse import ast_check
+        from t2sql.safety import Policy
+        pol = Policy("admin", allowed_tables={"VATInvoice", "ProductInv"}, denied_columns={("VATInvoice", "CusPhone")})
+        self.assertEqual(ast_check("SELECT count() FROM VATInvoice FINAL", pol), {"vatinvoice"})
+        for sql in ("SELECT CusPhone FROM VATInvoice", "SELECT * FROM VATInvoice"):
+            with self.assertRaises(SafetyError):
+                ast_check(sql, pol)
+        with self.assertRaises(SafetyError):
+            ast_check("SELECT 1 FROM VATInvoice_local", pol)
+
+    def test_readonly_setting_errors_switch_to_restricted_mode(self):
+        from t2sql.db.clickhouse import _is_readonly_setting_error
+        self.assertTrue(_is_readonly_setting_error(Exception("Setting max_execution_time is readonly")))
+        self.assertTrue(_is_readonly_setting_error(Exception("Code: 164. DB::Exception: Cannot modify 'x' setting in readonly mode")))
+        self.assertFalse(_is_readonly_setting_error(Exception("Code: 60. DB::Exception: Table x doesn't exist")))
 
     def test_ast_check_blocks_clickhouse_specific_risks(self):
         from t2sql.db.clickhouse import ast_check

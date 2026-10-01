@@ -17,16 +17,19 @@ EXAMPLES = ["Có bao nhiêu bản ghi trong bảng lớn nhất?", "Còn năm ng
 
 def database_choices():
     """T2SQL_DATABASE_URL (mặc định) + các T2SQL_DATABASE_URL_<TÊN> khác, ví dụ _CLICKHOUSE."""
-    def label(url):
+    def label(url, with_host=False):
         db = url.rsplit("/", 1)[-1].split("?", 1)[0]
-        return f"ClickHouse · {db}" if db else "ClickHouse"
+        text = f"ClickHouse · {db}" if db else "ClickHouse"
+        if with_host:      # hai server cùng tên database: thêm host để phân biệt (không in tài khoản / mật khẩu)
+            text += " @ " + url.split("@")[-1].split("/")[0]
+        return text
 
     urls = [os.environ.get("T2SQL_DATABASE_URL", "").strip()]
     urls += [v.strip() for k, v in sorted(os.environ.items()) if k.startswith("T2SQL_DATABASE_URL_") and v.strip()]
     out = {}
     for u in urls:
         if u and u not in out.values():
-            out.setdefault(label(u), u)
+            out[label(u) if label(u) not in out else label(u, with_host=True)] = u
     return out or {"(chưa cấu hình T2SQL_DATABASE_URL)": ""}
 
 

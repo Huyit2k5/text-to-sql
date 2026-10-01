@@ -87,9 +87,13 @@ CONFIGS = {
                         history_parts="snippets"),
     "rules_history": Config("rules_history", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                             shape_check=True, lookup_tables=True, error_hints=True, use_history=True),
+    # production trước khi bật gợi ý lỗi / bảng danh mục / chặn truy vấn nặng (giữ để so sánh)
+    "production_plain": Config("production_plain", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                               shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
+                               guard_write_intent=True),
     "production": Config("production", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                          shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
-                         guard_write_intent=True),
+                         guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
 }
 ABLATION_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect"]
 
@@ -202,9 +206,10 @@ class TextToSQL:
         self.retriever = None
         if self.config.use_fewshot:
             path = fewshot_path or self.dataset.fewshot_path
-            self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k) if path else None
-            for ex in self.retriever.examples:
-                ex["sql"] = example_sql(ex)
+            if path and os.path.exists(path):      # bộ dữ liệu mới chưa có few-shot: chạy không kèm ví dụ
+                self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k)
+                for ex in self.retriever.examples:
+                    ex["sql"] = example_sql(ex)
         self.linker = SchemaLinker(self.schema, top_k=self.config.linking_top_k) if self.config.use_linking else None
         self.lookups = self._load_lookups() if self.config.lookup_tables else {}
         self.history = self._load_history() if self.config.use_history else None

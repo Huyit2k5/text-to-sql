@@ -8,7 +8,7 @@ from .sql_utils import split_statements, strip_comments_and_strings
 # (ví dụ WITH x AS (DELETE ... RETURNING *) SELECT ...). REPLACE chỉ cấm dạng "REPLACE INTO",
 # vì replace() là hàm xử lý chuỗi hợp lệ.
 FORBIDDEN = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", r"REPLACE\s+INTO", "TRUNCATE", "MERGE",
-             "ATTACH", "DETACH", "RENAME", "ANALYZE", "GRANT", "REVOKE", "REFRESH"]
+             "ATTACH", "DETACH", "ANALYZE", "GRANT", "REVOKE", "REFRESH"]
 _FORBIDDEN_RE = re.compile(r"\b(" + "|".join(FORBIDDEN) + r")\b", re.I)
 
 WRITE_INTENT = re.compile(

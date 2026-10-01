@@ -1,0 +1,240 @@
+{
+  "title": "Hóa đơn điện tử (database hddt)",
+  "sql_dialect": "clickhouse",
+  "business_rules": [
+    "VATInvoice và ProductInv là bảng ReplacingMergeTree (khóa ComID, id; phiên bản _version): một hóa đơn có thể có nhiều phiên bản. LUÔN đọc bằng FINAL để lấy phiên bản mới nhất: FROM VATInvoice FINAL, hoặc có alias thì FROM VATInvoice AS v FINAL (alias đứng TRƯỚC FINAL). Không có FINAL thì hóa đơn bị đếm trùng.",
+    "Thêm điều kiện is_deleted = 0 để loại dòng đã xóa.",
+    "Điều kiện thời gian của hóa đơn dùng ArisingDate (ProductInv dùng InvArisingDate): hai cột này là khóa phân vùng theo tháng, lọc theo chúng thì truy vấn nhanh hơn nhiều.",
+    "Nối chi tiết hàng hóa với hóa đơn: ProductInv.InvID = VATInvoice.id AND ProductInv.ComID = VATInvoice.ComID.",
+    "Hóa đơn 'hợp lệ', 'không hợp lệ', 'đang kiểm tra' theo cơ quan thuế dựa vào TCTCheckStatus (1, -2, -1); 'chưa gửi CQT' là TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5). Hóa đơn điều chỉnh giảm / trả hàng là Type = 3; hóa đơn thay thế là Type = 1. Các mã Status còn lại và PaymentStatus chưa được xác nhận: nếu câu hỏi cần nghĩa chắc chắn của chúng (ví dụ 'hóa đơn đã hủy') thì nói rõ là chưa có định nghĩa, không tự đoán.",
+    "Dữ liệu là của nhiều công ty (ComID). Câu hỏi về một công ty cụ thể thì lọc theo ComID hoặc ComTaxCode."
+  ],
+  "tables": {
+    "VATInvoice": {
+      "description": "Hóa đơn GTGT điện tử, mỗi hóa đơn một dòng sau FINAL (~14 triệu hóa đơn). Bảng Distributed: truy vấn bảng này, không truy vấn VATInvoice_local",
+      "keywords": "hóa đơn gtgt điện tử",
+      "columns": {
+        "id": "Mã nội bộ của hóa đơn (khóa cùng ComID); ProductInv.InvID trỏ tới cột này",
+        "ComID": "Mã công ty phát hành hóa đơn (người bán). Cột đầu của khóa sắp xếp: lọc theo ComID rất nhanh",
+        "ComName": "Tên công ty phát hành (người bán)",
+        "ComTaxCode": "Mã số thuế người bán",
+        "CusName": "Tên khách hàng (người mua)",
+        "Buyer": "Tên người mua hàng",
+        "CusTaxCode": "Mã số thuế người mua",
+        "No": "Số hóa đơn",
+        "Serial": "Ký hiệu hóa đơn",
+        "Pattern": "Mẫu số hóa đơn",
+        "ArisingDate": "Ngày hóa đơn (ngày phát sinh). Là khóa phân vùng theo tháng: điều kiện thời gian nên dùng cột này để ClickHouse bỏ qua các tháng không liên quan",
+        "CreateDate": "Thời điểm tạo hóa đơn",
+        "PublishDate": "Thời điểm phát hành hóa đơn",
+        "Total": "Tiền hàng chưa thuế (cần xác nhận)",
+        "VATRate": "Thuế suất GTGT (%)",
+        "VATAmount": "Tiền thuế GTGT",
+        "Amount": "Tổng tiền thanh toán sau thuế (cần xác nhận)",
+        "Status": "Trạng thái hóa đơn (mã số). Suy luận từ dữ liệu và giao diện CAdmin, CHƯA được xác nhận chính thức: 0 = giai đoạn trước khi tương tác với CQT (chiếm ~91% dòng); 1 = đã tương tác với CQT; 3 = hóa đơn bị thay thế; 4 = hóa đơn bị điều chỉnh; 5 = bị CQT từ chối, đang hủy / thay thế. Chưa rõ nghĩa: -1, 6. Không được tự gắn nghĩa 'đã hủy' hay 'hợp lệ' cho Status; hóa đơn hợp lệ theo CQT dùng TCTCheckStatus = 1.",
+        "Type": "Loại hóa đơn (mã số). 0 = hóa đơn gốc (99,7%); 1 = hóa đơn thay thế (suy luận mạnh, ghi chú nhắc 'thay thế'); 2 = hóa đơn điều chỉnh, có thể điều chỉnh tăng (suy luận trung bình); 3 = hóa đơn điều chỉnh giảm / trả hàng, số tiền âm (suy luận mạnh); 4 = một dạng điều chỉnh khác, chưa rõ. Không có cột nào trỏ về hóa đơn gốc; liên kết nằm trong ProcessInvNote.",
+        "InvType": "Loại hóa đơn (mã số; cần bổ sung ý nghĩa)",
+        "PaymentMethod": "Hình thức thanh toán",
+        "PaymentStatus": "Trạng thái thanh toán (mã số, suy luận): 0 = mặc định (99,9%); 1 = nhiều khả năng đã thanh toán qua cổng thanh toán (gắn với PaymentType = 9). Chưa xác nhận.",
+        "CurrencyUnit": "Đơn vị tiền tệ",
+        "ExchangeRate": "Tỷ giá quy đổi sang VND",
+        "TaxAuthorityCode": "Mã của cơ quan thuế cấp cho hóa đơn",
+        "TCTCheckStatus": "Kết quả kiểm tra của cơ quan thuế (CQT); tên gọi lấy từ giao diện quản trị CAdmin của công ty (đã xác nhận): 1 = Hợp lệ; -2 = Không hợp lệ (luôn kèm TCTErrorMessage); -1 = Đang kiểm tra; NULL = chưa có kết quả. 'Chưa gửi CQT' = TCTCheckStatus IS NULL AND Status IN (1, 3, 4, 5). Giá trị khác (ngoài -2, -1, 1, NULL) không được tính.",
+        "TCTErrorMessage": "Thông báo lỗi do cơ quan thuế trả về; có khi TCTCheckStatus = -2 (Không hợp lệ)",
+        "ProvinceCode": "Mã tỉnh / thành",
+        "ProvinceName": "Tên tỉnh / thành",
+        "DestructionStatus": "Trạng thái hủy hóa đơn (mã số)",
+        "is_deleted": "1 = dòng đã bị xóa; dòng này bị loại khi gộp",
+        "_version": "Số phiên bản của dòng (ReplacingMergeTree giữ dòng có _version lớn nhất)",
+        "ProcessInvNote": "Ghi chú xử lý của hóa đơn thay thế / điều chỉnh (thường nêu hóa đơn gốc); hóa đơn thường (Type = 0) hầu như để trống"
+      }
+    },
+    "ProductInv": {
+      "description": "Dòng hàng hóa / dịch vụ trên hóa đơn, mỗi dòng hàng một dòng sau FINAL (~16,5 triệu dòng). Bảng Distributed: truy vấn bảng này, không truy vấn ProductInv_local",
+      "keywords": "hàng hóa dịch vụ dòng hàng sản phẩm số lượng đơn giá",
+      "columns": {
+        "id": "Mã nội bộ của dòng hàng hóa (khóa cùng ComID)",
+        "InvID": "Mã hóa đơn chứa dòng này: nối với VATInvoice.id (cùng ComID)",
+        "ComID": "Mã công ty phát hành hóa đơn",
+        "Code": "Mã hàng hóa / dịch vụ",
+        "Name": "Tên hàng hóa / dịch vụ",
+        "Unit": "Đơn vị tính",
+        "Price": "Đơn giá",
+        "Quantity": "Số lượng",
+        "Total": "Thành tiền chưa thuế (cần xác nhận)",
+        "VATRate": "Thuế suất GTGT (%)",
+        "VATAmount": "Tiền thuế GTGT",
+        "Amount": "Tiền sau thuế (cần xác nhận)",
+        "Discount": "Tỷ lệ chiết khấu",
+        "DiscountAmount": "Tiền chiết khấu",
+        "InvArisingDate": "Ngày của hóa đơn chứa dòng này (khóa phân vùng theo tháng)",
+        "InvPattern": "Mẫu số của hóa đơn",
+        "CurrencyUnit": "Đơn vị tiền tệ",
+        "ExchangeRate": "Tỷ giá",
+        "ProdType": "Loại hàng (mã số)",
+        "is_deleted": "1 = dòng đã bị xóa",
+        "_version": "Số phiên bản của dòng"
+      }
+    }
+  },
+  "concepts": {},
+  "relations": {
+    "ProductInv.InvID": "VATInvoice.id"
+  },
+  "requires": {},
+  "no_sample_columns": [
+    [
+      "VATInvoice",
+      "ComPhone"
+    ],
+    [
+      "VATInvoice",
+      "ComAddress"
+    ],
+    [
+      "VATInvoice",
+      "ComBankNo"
+    ],
+    [
+      "VATInvoice",
+      "ComTaxCode"
+    ],
+    [
+      "VATInvoice",
+      "CusName"
+    ],
+    [
+      "VATInvoice",
+      "Buyer"
+    ],
+    [
+      "VATInvoice",
+      "CusAddress"
+    ],
+    [
+      "VATInvoice",
+      "CusPhone"
+    ],
+    [
+      "VATInvoice",
+      "CusBankNo"
+    ],
+    [
+      "VATInvoice",
+      "CusTaxCode"
+    ],
+    [
+      "VATInvoice",
+      "CusEmails"
+    ],
+    [
+      "VATInvoice",
+      "CusIdentification"
+    ],
+    [
+      "VATInvoice",
+      "PassportNo"
+    ],
+    [
+      "VATInvoice",
+      "CreateBy"
+    ],
+    [
+      "VATInvoice",
+      "PublishBy"
+    ],
+    [
+      "VATInvoice",
+      "ApproveBy"
+    ],
+    [
+      "VATInvoice",
+      "Note"
+    ],
+    [
+      "VATInvoice_local",
+      "ComPhone"
+    ],
+    [
+      "VATInvoice_local",
+      "ComAddress"
+    ],
+    [
+      "VATInvoice_local",
+      "ComBankNo"
+    ],
+    [
+      "VATInvoice_local",
+      "ComTaxCode"
+    ],
+    [
+      "VATInvoice_local",
+      "CusName"
+    ],
+    [
+      "VATInvoice_local",
+      "Buyer"
+    ],
+    [
+      "VATInvoice_local",
+      "CusAddress"
+    ],
+    [
+      "VATInvoice_local",
+      "CusPhone"
+    ],
+    [
+      "VATInvoice_local",
+      "CusBankNo"
+    ],
+    [
+      "VATInvoice_local",
+      "CusTaxCode"
+    ],
+    [
+      "VATInvoice_local",
+      "CusEmails"
+    ],
+    [
+      "VATInvoice_local",
+      "CusIdentification"
+    ],
+    [
+      "VATInvoice_local",
+      "PassportNo"
+    ],
+    [
+      "VATInvoice_local",
+      "CreateBy"
+    ],
+    [
+      "VATInvoice_local",
+      "PublishBy"
+    ],
+    [
+      "VATInvoice_local",
+      "ApproveBy"
+    ],
+    [
+      "VATInvoice_local",
+      "Note"
+    ]
+  ],
+  "policies": {
+    "admin": {
+      "allowed_tables": [
+        "VATInvoice",
+        "ProductInv"
+      ]
+    }
+  },
+  "example_questions": [
+    "Có bao nhiêu hóa đơn trong tháng 5 năm 2025?",
+    "Tổng tiền thuế GTGT theo từng tháng năm 2025",
+    "10 mặt hàng có tổng số lượng bán nhiều nhất"
+  ],
+  "exclude_tables": [
+    "VATInvoice_local",
+    "ProductInv_local"
+  ]
+}
