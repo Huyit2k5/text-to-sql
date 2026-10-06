@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kiểm toán bộ đánh giá hddt: kết quả thực nghiệm</title>
+<style>
+  :root {
+    --bg: #F4F6F3; --surface: #FFFFFF; --surface-2: #EEF0EA;
+    --ink: #1A1E24; --ink-soft: #565C66; --ink-faint: #8A909B;
+    --border: #DBE0D8; --accent: #3E4C8C; --accent-ink: #2C3868; --accent-soft: #E8EAF5;
+    --good: #2F7A56; --good-soft: #E5F2EA; --bad: #AE463A; --bad-soft: #FBEAE6;
+    --warn: #96631A; --warn-soft: #F6EEDD;
+    --hallu: #8A4B9E; --hallu-soft: #F1E7F5; --struct: #1F7A8C; --struct-soft: #E1F1F3;
+    --sup: #B0530F; --sup-soft: #FBECDD;
+    --math-bg: #FBFBF8; --shadow: 0 1px 2px rgba(26,30,36,.05), 0 8px 24px -12px rgba(26,30,36,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161C; --surface: #1C1F27; --surface-2: #21242D;
+      --ink: #ECEEF2; --ink-soft: #AEB4C0; --ink-faint: #767C89;
+      --border: #333844; --accent: #93A0E3; --accent-ink: #C7CDF1; --accent-soft: #262B46;
+      --good: #74C79C; --good-soft: #1B3129; --bad: #E2988B; --bad-soft: #3B2521;
+      --warn: #E3BA71; --warn-soft: #3A3220;
+      --hallu: #CB9BDD; --hallu-soft: #2E2438; --struct: #7FC9D6; --struct-soft: #1B3236;
+      --sup: #E3A45D; --sup-soft: #3A2A16;
+      --math-bg: #1A1D24; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161C; --surface: #1C1F27; --surface-2: #21242D;
+    --ink: #ECEEF2; --ink-soft: #AEB4C0; --ink-faint: #767C89;
+    --border: #333844; --accent: #93A0E3; --accent-ink: #C7CDF1; --accent-soft: #262B46;
+    --good: #74C79C; --good-soft: #1B3129; --bad: #E2988B; --bad-soft: #3B2521;
+    --warn: #E3BA71; --warn-soft: #3A3220;
+    --hallu: #CB9BDD; --hallu-soft: #2E2438; --struct: #7FC9D6; --struct-soft: #1B3236;
+    --sup: #E3A45D; --sup-soft: #3A2A16;
+    --math-bg: #1A1D24; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.65; margin: 0; }
+  .page { max-width: 880px; margin: 0 auto; padding: 4.5rem 1.75rem 6rem; }
+  h1, h2, h3 { font-family: "Source Serif 4", Georgia, "Times New Roman", serif; font-weight: 600; text-wrap: balance; color: var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: .6rem; }
+  .eyebrow::before { content: ""; width: 1.6rem; height: 1px; background: var(--accent); display: inline-block; }
+  header.hero { margin-bottom: 3.4rem; }
+  header.hero .eyebrow { margin-bottom: 1rem; }
+  header.hero h1 { font-size: clamp(1.85rem, 1.3rem + 2vw, 2.5rem); line-height: 1.18; margin: 0 0 .9rem; }
+  header.hero .dek { font-size: 1.06rem; color: var(--ink-soft); max-width: 70ch; margin: 0 0 1.6rem; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; font-size: .85rem; color: var(--ink-faint); padding-top: 1.2rem; border-top: 1px solid var(--border); }
+  section { margin-top: 3.4rem; }
+  section > .eyebrow { margin-bottom: .55rem; }
+  section > h2 { font-size: 1.5rem; margin: 0 0 1.15rem; }
+  section p { margin: 0 0 1rem; max-width: 72ch; }
+  section p.lede { font-size: 1.04rem; color: var(--ink-soft); }
+  section > p:last-child { margin-bottom: 0; }
+  h3.sub { font-size: 1.08rem; margin: 1.8rem 0 .8rem; }
+  strong.hl { color: var(--ink); font-weight: 600; }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .88em; background: var(--surface-2); padding: .1em .4em; border-radius: 4px; color: var(--accent-ink); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 1.4rem 0; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .89rem; background: var(--surface); }
+  th, td { padding: .68rem .85rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th { font-family: "IBM Plex Mono", monospace; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); background: var(--surface-2); font-weight: 500; }
+  tbody td { color: var(--ink); font-size: .87rem; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.before { color: var(--ink-faint); }
+  td.after { color: var(--accent-ink); font-weight: 500; }
+
+  /* status/feasibility pills, reusing the report's color tokens */
+  .pill { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; padding: .3em .65em; border-radius: 5px; font-weight: 600; }
+  .pill-good { background: var(--good-soft); color: var(--good); }
+  .pill-warn { background: var(--warn-soft); color: var(--warn); }
+  .pill-bad { background: var(--bad-soft); color: var(--bad); }
+  .pill-struct { background: var(--struct-soft); color: var(--struct); }
+  .pill-sup { background: var(--sup-soft); color: var(--sup); }
+  .feas-good { color: var(--good); font-weight: 600; }
+  .feas-warn { color: var(--warn); font-weight: 600; }
+  .feas-bad { color: var(--bad); font-weight: 600; }
+
+  /* proposal / change cards (one per direction) */
+  .changes { list-style: none; margin: 1.4rem 0; padding: 0; display: flex; flex-direction: column; gap: .9rem; }
+  .changes li { display: flex; gap: 1rem; align-items: flex-start; padding: 1.1rem 1.3rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+  .changes .pill { flex-shrink: 0; margin-top: .1rem; }
+  .changes h3 { font-size: 1.02rem; margin: 0 0 .3rem; }
+  .changes .cite-line { font-family: "IBM Plex Mono", monospace; font-size: .78rem; color: var(--ink-faint); margin: 0 0 .6rem; }
+  .changes p { font-size: .92rem; color: var(--ink-soft); margin: 0 0 .6rem; max-width: none; }
+  .changes p:last-child { margin-bottom: 0; }
+  .changes ul { margin: .3rem 0 .8rem; padding-left: 1.2rem; font-size: .92rem; color: var(--ink-soft); }
+  .changes li > div { flex: 1; min-width: 0; }
+
+  /* why-box: nuance / integration-point / rationale callout inside a card */
+  .why-box { border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); background: var(--accent-soft); border-radius: 10px; padding: 1.1rem 1.3rem; margin: 1rem 0 0; }
+  .why-title { font-family: "IBM Plex Mono", monospace; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: .6rem; font-weight: 600; }
+  .why-box p { font-size: .91rem; color: var(--ink-soft); margin: 0 0 .6rem; max-width: none; }
+  .why-box p:last-child { margin-bottom: 0; }
+  .why-box p.why-caveat { color: var(--ink-faint); font-style: italic; }
+
+  /* numbered roadmap / step list */
+  .steps { list-style: none; margin: 1.4rem 0; padding: 0; counter-reset: step; }
+  .steps li { position: relative; padding: 0 0 1.5rem 2.6rem; border-left: 2px solid var(--border); margin-left: .75rem; }
+  .steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .steps li::before { counter-increment: step; content: counter(step); position: absolute; left: -.95rem; top: 0; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--sup); color: var(--surface); font-family: "IBM Plex Mono", monospace; font-size: .8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .steps h3 { font-size: 1rem; margin: 0 0 .4rem; }
+  .steps p { font-size: .92rem; color: var(--ink-soft); margin: 0 0 .6rem; max-width: none; }
+
+  pre.code { background: var(--math-bg); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1.1rem; overflow-x: auto; font-family: "IBM Plex Mono", monospace; font-size: .8rem; line-height: 1.6; color: var(--ink); margin: .8rem 0; }
+
+  .callout { display: flex; gap: .9rem; padding: 1.1rem 1.3rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); margin: 1.4rem 0; }
+  .callout .mark { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: .78rem; letter-spacing: .04em; flex-shrink: 0; padding-top: .15rem; }
+  .callout.good { border-color: color-mix(in srgb, var(--good) 40%, var(--border)); }
+  .callout.good .mark { color: var(--good); }
+  .callout.warn { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+  .callout.warn .mark { color: var(--warn); }
+  .callout p { margin: 0; font-size: .95rem; color: var(--ink-soft); }
+  .callout p + p { margin-top: .6rem; }
+
+  .refs { list-style: decimal; margin: 1.4rem 0; padding-left: 1.4rem; font-size: .88rem; color: var(--ink-soft); }
+  .refs li { margin-bottom: .7rem; }
+  .refs a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .refs em { color: var(--ink); font-style: italic; }
+
+  footer { margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--ink-faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; }
+  @media (max-width: 600px) { .page { padding: 3rem 1.15rem 4rem; } th, td { padding: .5rem .55rem; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div class="eyebrow">Hướng 2 · Kiểm toán bộ đánh giá</div>
+  <h1>Kiểm toán bộ đánh giá bằng chuyên gia, hỗ trợ bằng LLM: kết quả thực nghiệm</h1>
+  <p class="dek">Mọi con số độ đúng của hệ thống phụ thuộc vào SQL chuẩn do chính chúng ta viết. Thực nghiệm này nhờ LLM soát từng câu để chuyên gia nghiệp vụ chỉ cần xác nhận hoặc bác bỏ,
+  và đo xem bộ kiểm toán có bắt được các lỗi đã biết không.</p>
+  <div class="meta-row"><span>Ngày: 05/10/2026</span><span>Phạm vi: 91 câu có SQL chuẩn (dev + held-out) và 50 nhãn câu mơ hồ / không trả lời được</span><span>Chuyên gia chưa xem: các lựa chọn là nhận định tạm của kỹ thuật</span></div>
+</header>
+<section><div class="eyebrow">Kết luận</div><h2>Bộ kiểm toán tìm được đúng chỗ cần chuyên gia, nên giữ</h2>
+<p class="lede">Trên 91 câu, LLM xếp <strong class="hl">67 câu "ổn"</strong> và gắn cờ <strong class="hl">24 câu</strong> cần chuyên gia xem. 24 câu này chỉ xoay quanh <strong class="hl">bốn câu hỏi nghiệp vụ</strong>, nên một buổi họp ngắn là đủ.
+Điều đáng chú ý nhất: <strong class="hl">mọi câu hệ thống từng làm sai đều nằm trong số câu bị gắn cờ</strong>.</p>
+<div class="kpi-row">
+  <div class="kpi"><div class="k">Câu được xếp ổn</div><div class="n">67<small>/91</small></div><div class="d">hệ thống khớp 222/222 lần chạy</div></div>
+  <div class="kpi"><div class="k">Câu bị gắn cờ</div><div class="n">24<small>/91</small></div><div class="d">hệ thống khớp 63/79 lần chạy</div></div>
+  <div class="kpi"><div class="k">Câu từng sai, có gắn cờ</div><div class="n">6/6<small></small></div><div class="d">không có câu sai nào nằm ngoài danh sách gắn cờ</div></div>
+  <div class="kpi"><div class="k">Lỗi đã biết, bị bắt</div><div class="n">5/5<small></small></div><div class="d">4 SQL chuẩn bản cũ đã bị sửa + 1 nhãn sai (k04)</div></div>
+</div>
+<div class="callout good"><span class="mark">KẾT QUẢ</span><div><p>Điểm của hệ thống trên 67 câu "ổn" là <strong>222/222 lần chạy</strong>; chênh lệch với độ đúng 95,2% / 92,9% đã báo cáo gần như hoàn toàn đến từ 24 câu bị gắn cờ. Nghĩa là <strong>phần lớn "lỗi còn lại" của hệ thống là mơ hồ hoặc lệch định nghĩa trong bộ đánh giá, không phải model hiểu sai</strong>.</p></div></div>
+<div class="callout warn"><span class="mark">LƯU Ý</span><div><p>Đây mới là nhận định của LLM và của kỹ thuật, chưa có chuyên gia nào xác nhận. Một phần cờ "mơ hồ" có thể là cẩn thận thái quá (bộ kiểm toán gắn cờ 26% số câu), và 1 trong 2 câu bị gắn "SQL chuẩn sai" (h27) là báo nhầm (xem bên dưới).</p></div></div>
+</section>
+
+<section><div class="eyebrow">Cách làm</div><h2>Ba lớp kiểm tra</h2>
+<ol class="steps">
+  <li><h3>Cảnh báo khách quan tự động trên SQL chuẩn</h3><p>Chạy từng SQL chuẩn rồi báo: kết quả rỗng hoặc toàn 0, <code>LIMIT</code> không có <code>ORDER BY</code>, hòa hạng ở vị trí cuối của top-N (so với <code>LIMIT N+10</code>), thiếu <code>FINAL</code> hoặc <code>is_deleted</code>, lỗi chạy. Kết quả: chỉ 1 câu bị báo (o24, hòa hạng ở vị trí cuối).</p></li>
+  <li><h3>LLM soạn nhận xét cho từng câu</h3><p>Model tự host nhận câu hỏi, SQL chuẩn, 5 dòng kết quả, cảnh báo ở lớp 1, các lần chạy của hệ thống (nếu khác SQL chuẩn thì kèm SQL đã sinh), cùng schema <em>đầy đủ</em> với tài liệu nghiệp vụ. Nó trả về một trong bốn kết luận (<code>ok</code>, <code>gold_wrong</code>, <code>ambiguous</code>, <code>needs_expert</code>), các điểm đáng ngờ, các cách hiểu khác và một câu hỏi cho chuyên gia.</p></li>
+  <li><h3>Kiểm toán nhãn câu mơ hồ / không trả lời được</h3><p>Với 50 câu thử "hỏi lại / từ chối / trả lời", model kiểm tra nhãn có đúng không, đặc biệt: nhãn "không có dữ liệu" có cột nào trong schema đầy đủ chứa dữ liệu đó không.</p></li>
+</ol>
+<p>Kết quả chi tiết (có trích dữ liệu thật) nằm ở <code>results/hddt_audit/</code>, không đưa lên git. Phiếu cho chuyên gia ở <code>datasets/hddt/phieu_kiem_toan_bo_danh_gia.md</code> chỉ có câu hỏi, SQL chuẩn và nhận xét, không có dữ liệu thật.</p>
+</section>
+
+<section><div class="eyebrow">Đo chất lượng</div><h2>Bộ kiểm toán có bắt được các lỗi đã biết không?</h2>
+<p class="lede">Trong lịch sử, bốn SQL chuẩn đã được sửa sau khi phát hiện lỗi (h06, h25, h27, h41) và một nhãn đã đổi (k04). Tôi cho bộ kiểm toán soi lại <strong>bản cũ (sai)</strong> của chúng.</p>
+<div class="table-wrap"><table><thead><tr><th>Câu</th><th>Bản kiểm toán</th><th>Kết luận của LLM</th><th>Tin cậy</th><th>Căn cứ</th></tr></thead><tbody><tr><td><strong>h06</strong></td><td>SQL chuẩn bản cũ (sau đó đã sửa)</td><td><span class="pill pill-good">gold_wrong</span></td><td class="num">0.95</td><td>SQL chuẩn thiếu điều kiện No > 0 để đảm bảo chỉ tính hóa đơn đã phát hành như yêu cầu của câu hỏi. Kết quả 15 có thể bao gồm các công ty chỉ</td></tr><tr><td><strong>h25</strong></td><td>SQL chuẩn bản cũ (sau đó đã sửa)</td><td><span class="pill pill-warn">ambiguous</span></td><td class="num">0.72</td><td>Theo quy tắc nghiệp vụ trong tài liệu, 'số lượng hàng hóa bán ra' chỉ tính Feature = 1, nhưng SQL chuẩn không áp dụng bộ lọc này. Ngoài ra, </td></tr><tr><td><strong>h27</strong></td><td>SQL chuẩn bản cũ (sau đó đã sửa)</td><td><span class="pill pill-warn">ambiguous</span></td><td class="num">0.9</td><td>Theo tài liệu, 91% dữ liệu là hóa đơn nháp (Status = 0, No = 0). Việc không lọc No > 0 trong câu hỏi về 'hóa đơn' (mặc định thường hiểu là h</td></tr><tr><td><strong>h41</strong></td><td>SQL chuẩn bản cũ (sau đó đã sửa)</td><td><span class="pill pill-warn">ambiguous</span></td><td class="num">0.85</td><td>Theo quy tắc nghiệp vụ, 'số lượng hàng hóa bán ra' thường chỉ tính Feature = 1. Tuy nhiên, câu hỏi chỉ nói 'số lượng hàng hóa' mà không nói </td></tr><tr><td><strong>k04</strong></td><td>Nhãn ban đầu "không có dữ liệu" (sai: có cột <code>StoreName</code>)</td><td><span class="pill pill-good">label_wrong</span></td><td class="num">0.95</td><td>Cột StoreName, StoreCode trong bảng VATInvoice</td></tr></tbody></table></div>
+<p>Cả 5 lỗi đều bị gắn cờ, nhưng chỉ <strong>2 trên 5</strong> được gọi đúng tên là "SQL chuẩn sai / nhãn sai" (h06, k04); 3 lỗi còn lại bị xếp vào "mơ hồ". Nên coi cờ <code>ambiguous</code> là "cần chuyên gia xem" chứ không phải "câu hỏi mơ hồ thật".</p>
+<div class="callout warn"><span class="mark">CẨN TRỌNG</span><div><p>Chỉ 5 lỗi đã biết, nên "5/5" chưa nói lên độ nhạy thật. Ngoài ra bộ kiểm toán gắn cờ 26% số câu hiện tại, nên chưa biết cờ nào là báo nhầm cho tới khi chuyên gia xem. Nhãn k04 chỉ bị bắt vì bộ kiểm toán được thấy <em>danh sách cột đầy đủ</em> (tài liệu chỉ mô tả 54 trên 146 cột): <strong>lỗi gốc là tài liệu thiếu mô tả cột, không phải nhãn.</strong></p></div></div>
+</section>
+
+<section><div class="eyebrow">Kết quả chính</div><h2>24 câu bị gắn cờ xoay quanh bốn câu hỏi nghiệp vụ</h2>
+<div class="table-wrap"><table><thead><tr><th>Chủ đề</th><th>Số câu</th><th>Mã câu</th><th>Vấn đề</th><th>Hệ thống khớp</th><th>Câu hỏi cho chuyên gia</th></tr></thead><tbody><tr><td><strong>A. 'hóa đơn' có tính hóa đơn nháp / chưa phát hành không</strong></td><td class="num"><span class="num">12</span></td><td>h01, h07, h10, h11, h14, h16, h22, h23, h27, o07, o09, o19</td><td>Câu hỏi nói "hóa đơn" mà không nói rõ. SQL chuẩn đếm mọi hóa đơn, kể cả nháp (No = 0).</td><td class="num"><span class="num">39/39</span></td><td>Với câu hỏi về "hóa đơn" không nói rõ, mặc định tính mọi hóa đơn kể cả nháp, hay chỉ hóa đơn đã phát hành (No &gt; 0)? Có danh sách mã công ty thử cần loại không?</td></tr><tr><td><strong>B. 'dòng hàng hóa' / 'mặt hàng' có lọc Feature = 1 không</strong></td><td class="num"><span class="num">5</span></td><td>h08, h19, h20, o13, o14</td><td>SQL chuẩn không lọc <code>Feature = 1</code> nhưng câu hỏi nói "dòng hàng hóa" / "mặt hàng"; hệ thống thì lọc theo quy tắc trong tài liệu.</td><td class="num"><span class="num">9/17</span></td><td>"Dòng hàng hóa" và "mặt hàng" có nghĩa chỉ dòng <code>Feature = 1</code> không? Riêng "tiền chiết khấu trên các dòng hàng hóa" có tính cả dòng chiết khấu (Feature = 3) không? Đơn vị tính rỗng có tính là một đơn vị không?</td></tr><tr><td><strong>C. thuế suất: VATInvoice hay ProductInv</strong></td><td class="num"><span class="num">3</span></td><td>h13, h26, o12</td><td>SQL chuẩn dùng thuế suất ở cấp hóa đơn; tài liệu nói thuế suất ở cấp dòng hàng đáng tin hơn.</td><td class="num"><span class="num">4/10</span></td><td>Khi thống kê theo mức thuế suất, dùng <code>ProductInv.VATRate</code> (cấp dòng hàng) hay <code>VATInvoice.VATRate</code> (cấp hóa đơn)?</td></tr><tr><td><strong>D. khác</strong></td><td class="num"><span class="num">3</span></td><td>h21, h24, h56</td><td>Mỗi câu một lý do riêng: chiết khấu cấp hóa đơn hay cấp dòng, "trung bình của các công ty", "bị điều chỉnh" theo Status hay Type.</td><td class="num"><span class="num">7/9</span></td><td>Xem phiếu kiểm toán từng câu.</td></tr><tr><td><strong>D. kết quả bị chi phối bởi dữ liệu thử / hòa hạng</strong></td><td class="num"><span class="num">1</span></td><td>o24</td><td>Top-N có hòa ở vị trí cuối, và kết quả có giá trị bất thường, tên hàng giống dữ liệu thử.</td><td class="num"><span class="num">4/4</span></td><td>Có loại các mã công ty / hàng thử khỏi kết quả không?</td></tr></tbody></table></div>
+<p>Nhóm A lớn nhất: <strong>12 câu</strong> (13% bộ đánh giá) phụ thuộc vào một định nghĩa chưa được xác nhận. Khoảng 91% dòng trong <code>VATInvoice</code> là hóa đơn nháp, và trong tháng 5/2025 chỉ 1,8% hóa đơn có số. Đây cũng là lý do bảng xếp hạng công ty từng bị chi phối bởi dữ liệu thử.
+Một câu trả lời của chuyên gia ở nhóm A có thể đổi SQL chuẩn của 12 câu cùng lúc.</p>
+</section>
+
+<section><div class="eyebrow">Kiểm tra lại</div><h2>Tôi đọc lại bốn nhận định quan trọng nhất</h2>
+<p class="lede">Không tin LLM ở những câu quyết định. Tôi đọc SQL chuẩn, SQL của hệ thống và lý lẽ của bộ kiểm toán cho các câu hệ thống sai lặp lại hoặc bị gắn "SQL chuẩn sai".</p>
+<div class="table-wrap"><table><thead><tr><th>Câu</th><th>Nội dung</th><th>Nhận xét của bộ kiểm toán</th><th>Đọc lại</th></tr></thead><tbody><tr><td>o12</td><td>Tổng thuế GTGT theo thuế suất</td><td><span class="pill pill-good">Gắn cờ đúng</span></td><td>SQL chuẩn dùng thuế suất cấp hóa đơn, trong khi tài liệu của chính chúng ta nói cấp dòng hàng đáng tin hơn và hệ thống làm theo tài liệu. <strong>Rất có thể SQL chuẩn sai.</strong> Chờ chuyên gia xác nhận.</td></tr><tr><td>o14</td><td>Tổng tiền chiết khấu trên các dòng hàng hóa</td><td><span class="pill pill-good">Gắn cờ đúng</span></td><td>"Dòng hàng hóa" đọc theo nghĩa đen là <code>Feature = 1</code>; SQL chuẩn không lọc, hệ thống thì lọc. Hai cách hiểu cho hai kết quả khác nhau rõ rệt (15,2 triệu so với 7,4 triệu). <strong>Không thể nói hệ thống sai.</strong></td></tr><tr><td>h20</td><td>Đơn vị tính dùng nhiều nhất trên các dòng hàng hóa</td><td><span class="pill pill-good">Gắn cờ đúng</span></td><td>Hai vấn đề cùng lúc: có lọc <code>Feature = 1</code> không, và đơn vị tính rỗng có được tính không. Kết quả khác nhau theo từng cách.</td></tr><tr><td>h27</td><td>Tổng tiền của 3 công ty nhiều hóa đơn nhất</td><td><span class="pill pill-warn">Một nửa báo nhầm</span></td><td>LLM nói SQL chuẩn không làm đúng "2 bước": <strong>sai</strong>, SQL tính tổng theo từng tên rồi lấy 3 tên nhiều hóa đơn nhất, là đúng. Cái đúng của nhận xét là chuyện hóa đơn nháp (nhóm A).</td></tr></tbody></table></div>
+<div class="callout good"><span class="mark">Ý NGHĨA</span><div><p>Ba "lỗi còn lại" đã ghi nhận lâu nay của hệ thống (o12, o14, h20) hóa ra là <strong>bất đồng giữa SQL chuẩn và tài liệu / cách đọc câu hỏi</strong>, chưa chắc là model hiểu sai. Cần chuyên gia quyết định đúng sai trước khi tính lại điểm.</p></div></div>
+</section>
+
+<section><div class="eyebrow">Tự xác nhận</div><h2>Nhóm kỹ thuật tự suy luận và đối soát để chọn cách hiểu cho từng câu hỏi nghiệp vụ</h2>
+<p class="lede">Chưa gặp được chuyên gia, nên tôi tra quy định, đối soát số liệu trong database và thử tìm thói quen truy vấn thật. <strong>Đây là lựa chọn tạm của kỹ thuật, chưa phải xác nhận của chuyên gia.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>Vấn đề</th><th>Cách hiểu đã chọn</th><th>Bằng chứng</th><th>Độ chắc</th><th>Trạng thái</th></tr></thead><tbody><tr><td><strong>1. "Hóa đơn" có tính nháp không</strong> (13 câu)</td><td><strong>Chưa chốt.</strong> Giữ mặc định tính cả nháp, chấp nhận cả hai cách khi chấm, giao diện ghi rõ giả định</td><td>Quy định nghiêng về "đã phát hành" (nháp chưa phải hóa đơn). Dữ liệu: 91% là nháp; tháng 5/2025 chỉ 1,8% có số. Thói quen truy vấn thật: <strong>không có thông tin</strong> (15 truy vấn thật trên bảng hóa đơn đều là kiểm tra đồng bộ dữ liệu)</td><td><span class="pill pill-warn">Thấp</span></td><td><span class="pill pill-warn">Chờ chuyên gia</span></td></tr><tr><td><strong>2. "Dòng hàng hóa", "mặt hàng"</strong> (5 câu)</td><td>Chỉ tính <code>Feature = 1</code>; loại đơn vị tính rỗng; chiết khấu chung cộng mọi dòng</td><td>Mã <code>Feature</code> khớp quy định: 1 hàng hóa (99,8%), 2 khuyến mại, 3 chiết khấu (112/133 dòng có thành tiền âm), 4 ghi chú (thành tiền 0). 77% dòng không ghi đơn vị tính</td><td><span class="pill pill-good">Cao</span></td><td><span class="pill pill-good">Đã áp dụng</span></td></tr><tr><td><strong>3. Thống kê theo thuế suất</strong> (7 câu)</td><td>Dùng thuế suất cấp dòng hàng (<code>ProductInv.VATRate</code>)</td><td>Đối soát thuế tháng 3/2025: theo dòng hàng khớp cột tổng hợp của hóa đơn (lệch 0,02% ở mức 10%); theo cấp hóa đơn thì mức "0" chứa 7,2 tỷ tiền thuế thay vì khoảng 5 triệu. Hóa đơn có dòng 8%: 17.263, nhưng chỉ 406 hóa đơn ghi 8% ở cấp hóa đơn</td><td><span class="pill pill-good">Cao</span></td><td><span class="pill pill-good">Đã áp dụng</span></td></tr><tr><td><strong>4. Các câu lẻ</strong> (4 câu)</td><td>Giữ nguyên SQL chuẩn, ghi chú</td><td>h56: <code>Status = 4</code> là hóa đơn gốc bị điều chỉnh, khớp quy định; h21, h24, o24 là ghi chú</td><td><span class="pill pill-warn">Trung bình</span></td><td><span class="pill pill-warn">Chờ xem lại</span></td></tr></tbody></table></div>
+<h3 class="sub">Áp dụng vào bộ đánh giá</h3>
+<ul>
+  <li>Sửa SQL chuẩn: h08, h19, h20, o13 (thêm <code>Feature = 1</code>), o14 (đọc theo nghĩa đen), o12 (thuế suất cấp dòng hàng), và h03, h13, h26, h43, h44, o02 (đếm hóa đơn theo thuế suất cấp dòng hàng).</li>
+  <li>Thêm <strong>đáp án chấp nhận thay thế</strong> (<code>alt_sql</code>) cho các câu có định nghĩa còn mở: 13 câu ở vấn đề 1, o14 và 6 câu thuế suất. Bộ chấm khớp với SQL chuẩn <em>hoặc</em> bất kỳ đáp án thay thế nào. Không có câu nào chỉ khớp nhờ đáp án thay thế, nên cơ chế này không làm điểm cao hơn.</li>
+  <li>Sửa tài liệu <code>schema_docs.json</code> (v4 → v5), ví dụ few-shot về "mặt hàng", ghi chú giả định hóa đơn nháp trên giao diện.</li>
+</ul>
+<h3 class="sub">Điểm số thay đổi thế nào</h3>
+<div class="table-wrap"><table><thead><tr><th>Cấu hình</th><th>SQL chuẩn</th><th>Tài liệu</th><th>Dev (63 câu)</th><th>Held-out (28 câu)</th></tr></thead><tbody><tr><td>Trước kiểm toán</td><td>cũ</td><td>v4</td><td class="num"><span class="num">60/63 (95,2%)</span></td><td class="num"><span class="num">26/28 (92,9%)</span></td></tr><tr><td>Sửa nhãn, chưa đổi tài liệu</td><td>mới</td><td>v4</td><td class="num"><span class="num">61/63 (96,8%)</span></td><td class="num"><span class="num">27/28 (96,4%)</span></td></tr><tr><td><strong>Sửa nhãn và tài liệu</strong></td><td>mới</td><td><strong>v5</strong></td><td class="num"><span class="num"><strong>62/63 (98,4%)</strong></span></td><td class="num"><span class="num"><strong>27/28 (96,4%)</strong></span></td></tr></tbody></table></div>
+<div class="callout warn"><span class="mark">ĐỌC ĐÚNG</span><div><p><strong>Điểm tăng chủ yếu vì sửa nhãn, không phải vì hệ thống tốt lên.</strong> Cùng SQL chuẩn mới, tài liệu v5 hơn v4 đúng một câu ở dev (h20, đơn vị tính rỗng) và bằng nhau ở held-out: nằm trong nhiễu giữa các lần chạy. Hơn nữa nhãn do cùng nhóm sửa theo cách hiểu hợp lý với tài liệu, nên có phần vòng tròn; chuyên gia cần xác nhận trước khi tin con số 98,4%.</p></div></div>
+<p>Hai câu còn sai là <strong>lỗi thật của model</strong>, không phải lỗi nhãn: h26 (đếm dòng hàng thay vì đếm hóa đơn, ra tỷ lệ hơn 300%) và o13 (không lọc <code>Feature = 1</code> ở lần chạy này, trong khi câu tương tự h08 thì lọc).</p>
+<p>Một lần chạy trước khi sửa SQL chuẩn cho nhóm thuế suất cho thấy một phát hiện đáng nhớ: khi tôi viết quy tắc tài liệu mới, model đếm hóa đơn theo thuế suất ở cấp dòng hàng ở <em>mọi</em> câu và hỏng 4 câu mà SQL chuẩn cũ dùng cấp hóa đơn. Hóa ra model đúng hơn SQL chuẩn cũ (406 so với 17.263 hóa đơn). <strong>Bộ chấm chỉ tốt bằng định nghĩa nghiệp vụ phía sau nó.</strong></p>
+</section>
+
+<section><div class="eyebrow">Ý nghĩa</div><h2>Điểm hiện tại nên đọc thế nào</h2>
+<div class="table-wrap"><table><thead><tr><th>Nhóm câu</th><th>Số câu</th><th>Hệ thống khớp</th><th>Cách đọc</th></tr></thead><tbody><tr><td>Xếp "ổn"</td><td><span class="num">67</span></td><td><span class="num">222/222</span> lần chạy (100%)</td><td>Đo được độ đúng đáng tin cậy trên nhóm này</td></tr><tr><td>Bị gắn cờ</td><td><span class="num">24</span></td><td><span class="num">63/79</span> lần chạy (80%)</td><td>Điểm phụ thuộc chuyên gia chọn cách hiểu nào; hệ thống đã thống nhất theo tài liệu</td></tr><tr><td>Câu từng sai</td><td><span class="num">6</span></td><td>h08, h20, h24, h26, o12, o14</td><td>Tất cả nằm trong nhóm bị gắn cờ</td></tr></tbody></table></div>
+<p>Với phép tính đó, điểm 95,2% (dev) và 92,9% (held-out) <strong>không phải con số đáng tin để so sánh hay báo cáo ra ngoài</strong>, vì mẫu số gồm 24 câu chưa có đáp án chuẩn đã xác nhận. Con số trung thực hơn:
+hệ thống đúng ổn định trên các câu rõ ràng (67/67), và trên các câu còn lại thì đáp án phụ thuộc định nghĩa.</p>
+</section>
+<section><div class="eyebrow">Hạn chế</div><h2>Giới hạn của thực nghiệm</h2>
+<ul>
+  <li><strong>Chưa có chuyên gia xác nhận.</strong> Mọi nhận định là của LLM và kỹ thuật. Chưa đo được độ chính xác (precision) của các cờ.</li>
+  <li><strong>Bộ kiểm toán dùng model tự host cùng họ với model sinh SQL</strong>, và đọc cùng tài liệu nghiệp vụ, nên có thể cùng thiên lệch (ví dụ cùng coi "hóa đơn nháp" là điểm mơ hồ vì tài liệu đã nhắc đến nó).</li>
+  <li><strong>Mẫu lỗi đã biết rất nhỏ</strong> (5), và tự đo độ nhạy trên chính nó.</li>
+  <li><strong>Gắn cờ nhiều (26%).</strong> Nhiều cờ có thể chỉ là ghi nhận một cách hiểu mặc định hợp lý.</li>
+  <li><strong>Lỗi gốc là tài liệu</strong> chưa mô tả đủ cột (54 trên 146); nên bổ sung trước khi tin các nhãn "không có dữ liệu".</li>
+</ul>
+</section>
+<section><div class="eyebrow">Hướng đi</div><h2>Việc tiếp theo</h2>
+<ol class="steps">
+  <li><h3>Gửi phiếu cho chuyên gia</h3><p>Bốn câu hỏi ở trên, kèm danh sách câu bị ảnh hưởng. Phiếu có sẵn ở <code>datasets/hddt/phieu_kiem_toan_bo_danh_gia.md</code>, không chứa dữ liệu thật.</p></li>
+  <li><h3>Cập nhật SQL chuẩn và tài liệu theo trả lời</h3><p>Sửa SQL chuẩn của các câu bị ảnh hưởng, ghi vào <code>schema_docs.json</code> định nghĩa mặc định đã xác nhận, gắn nhãn "mơ hồ" cho các câu chuyên gia công nhận là mơ hồ để không tính vào độ đúng.</p></li>
+  <li><h3>Chạy lại và báo cáo độ đúng đã hiệu chỉnh</h3><p>Chạy lại dev và held-out; báo riêng độ đúng trên câu rõ ràng và trên câu phụ thuộc định nghĩa.</p></li>
+  <li><h3>Bổ sung mô tả cho các cột chưa có mô tả</h3><p>VATInvoice mới có mô tả cho 54 trên 146 cột. Ưu tiên cột có dữ liệu thật, để nhãn "không có dữ liệu" không dựa trên tài liệu thiếu.</p></li>
+</ol>
+</section>
+<footer><span>Text-to-SQL tiếng Việt cho hóa đơn điện tử</span><span>Báo cáo kiểm toán bộ đánh giá (hướng 2)</span></footer>
+
+</div>
+</body>
+</html>

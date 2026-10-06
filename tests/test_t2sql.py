@@ -623,5 +623,130 @@ class TestDatasets(unittest.TestCase):
                 self.assertIn(side.split(".")[0], tables)
 
 
+class TestClarifyRules(unittest.TestCase):
+    def test_production_uses_the_detailed_clarify_rule_and_older_configs_keep_the_short_one(self):
+        from t2sql import prompts
+        self.assertTrue(CONFIGS["production"].clarify_strong)
+        self.assertFalse(CONFIGS["production_plain"].clarify_strong)
+        strong = prompts.sql_system("SCHEMA", True, "clickhouse", strong=True)
+        short = prompts.sql_system("SCHEMA", True, "clickhouse", strong=False)
+        off = prompts.sql_system("SCHEMA", False, "clickhouse", strong=True)
+        self.assertIn("đoán tên cột không có trong schema", strong)
+        self.assertIn("CLARIFY:", strong)
+        self.assertIn("CLARIFY:", short)
+        self.assertNotIn("đoán tên cột không có trong schema", short)
+        self.assertNotIn("CLARIFY", off)                   # allow_clarify=False tắt cả hai
+
+    def test_classification_step_parses_the_three_answers_and_fails_open(self):
+        from t2sql import prompts
+        from t2sql.pipeline import parse_classification
+        self.assertEqual(parse_classification("ANSWER"), ("sql", None))
+        self.assertEqual(parse_classification("CLARIFY: Theo tiêu chí nào?"), ("clarify", "Theo tiêu chí nào?"))
+        self.assertEqual(parse_classification("<think>x</think>\nCANNOT: Không có dữ liệu."), ("cannot", "Không có dữ liệu."))
+        self.assertEqual(parse_classification("không rõ"), ("sql", None))          # không đọc được: cứ sinh SQL
+        self.assertFalse(CONFIGS["production"].classify_first)
+        self.assertTrue(CONFIGS["production_classify"].classify_first)
+        self.assertIn("bộ phân loại", prompts.classify_system("SCHEMA"))
+
+
+class TestRoleVisibility(unittest.TestCase):
+    def setUp(self):
+        from unittest import mock
+        self.mock = mock
+        self.pols = datasets.for_database("hddt").policies          # admin (đặc quyền) + analyst (che PII)
+
+    def test_privileged_role_is_hidden_by_default(self):
+        from t2sql import access
+        with self.mock.patch.dict(os.environ, {"T2SQL_ALLOW_ADMIN": "", "T2SQL_ADMIN_PASSWORD": ""}):
+            self.assertTrue(access.is_privileged(self.pols["admin"]))
+            self.assertFalse(access.is_privileged(self.pols["analyst"]))
+            self.assertEqual(access.selectable_roles(self.pols), ["analyst"])
+
+    def test_unlock_and_local_override_show_every_role(self):
+        from t2sql import access
+        with self.mock.patch.dict(os.environ, {"T2SQL_ALLOW_ADMIN": "", "T2SQL_ADMIN_PASSWORD": ""}):
+            self.assertEqual(set(access.selectable_roles(self.pols, unlocked=True)), {"admin", "analyst"})
+        with self.mock.patch.dict(os.environ, {"T2SQL_ALLOW_ADMIN": "1"}):
+            self.assertEqual(set(access.selectable_roles(self.pols)), {"admin", "analyst"})
+
+    def test_password_check(self):
+        from t2sql import access
+        with self.mock.patch.dict(os.environ, {"T2SQL_ADMIN_PASSWORD": "mat-khau-thu"}):
+            self.assertTrue(access.password_matches("mat-khau-thu"))
+            self.assertFalse(access.password_matches("sai"))
+            self.assertFalse(access.password_matches(""))
+        with self.mock.patch.dict(os.environ, {"T2SQL_ADMIN_PASSWORD": ""}):
+            self.assertFalse(access.password_matches(""))                   # chưa đặt mật khẩu: không bao giờ mở khóa
+
+
+class TestCharts(unittest.TestCase):
+    def test_bar_chart_is_horizontal_sorted_by_value_with_axis_titles_and_safe_field_names(self):
+        import pandas as pd
+        from t2sql import charts
+        df = pd.DataFrame({"Tên công ty (ComName).": ["CÔNG TY A", "P", "Phạm Văn Tùng"], "số: hóa đơn": [3, 77, 5]})
+        spec = charts.bar_chart(df, "Tên công ty (ComName).", "số: hóa đơn").to_dict()
+        bar, text = spec["layer"]
+        self.assertEqual(bar["encoding"]["y"]["field"], "nhan")                     # tên cột lạ không làm hỏng đặc tả
+        self.assertEqual(bar["encoding"]["y"]["sort"], {"field": "gia_tri", "order": "descending"})
+        self.assertEqual(bar["encoding"]["y"]["title"], "Tên công ty (ComName).")
+        self.assertEqual(bar["encoding"]["x"]["title"], "số: hóa đơn")
+        self.assertEqual(bar["encoding"]["x"]["axis"]["format"], ",.0f")           # số nguyên: không có phần thập phân
+        self.assertEqual(text["encoding"]["text"]["field"], "gia_tri")             # số trên đầu cột
+        self.assertGreaterEqual(spec["height"], 90)
+
+    def test_bar_chart_uses_decimals_for_non_integer_values(self):
+        import pandas as pd
+        from t2sql import charts
+        df = pd.DataFrame({"nhom": ["a", "b"], "ty_le": [12.5, 3.25]})
+        self.assertEqual(charts.bar_chart(df, "nhom", "ty_le").to_dict()["layer"][0]["encoding"]["x"]["axis"]["format"], ",.2f")
+
+
+class TestDraftNote(unittest.TestCase):
+    def test_note_only_when_invoices_are_read_without_a_status_filter(self):
+        from t2sql import charts
+        base = "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0"
+        self.assertIsNotNone(charts.draft_note(base))
+        self.assertIsNone(charts.draft_note(base + " AND No > 0"))                        # đã nói rõ đã phát hành
+        self.assertIsNone(charts.draft_note(base + " AND TCTCheckStatus = -2"))
+        self.assertIsNone(charts.draft_note(base + " AND Status = 5"))
+        self.assertIsNone(charts.draft_note("SELECT count() FROM ProductInv FINAL WHERE is_deleted = 0"))   # chỉ bảng dòng hàng
+        self.assertIsNone(charts.draft_note(None))
+
+
+class TestErrorMemory(unittest.TestCase):
+    ENTRIES = [
+        {"id": "x1", "question": "Tỷ lệ phần trăm số hóa đơn của mỗi mức thuế suất", "tags": "đếm hóa đơn từ dòng hàng uniqExact",
+         "wrong_sql": "SELECT count() FROM ProductInv", "correct_sql": "SELECT uniqExact((ComID, InvID)) FROM ProductInv", "lesson": "đếm hóa đơn bằng uniqExact"},
+        {"id": "x2", "question": "Đơn vị tính nào dùng nhiều nhất", "tags": "đơn vị tính rỗng",
+         "wrong_sql": "SELECT Unit", "correct_sql": "SELECT Unit WHERE Unit != ''", "lesson": "loại đơn vị tính rỗng"},
+    ]
+
+    def test_retrieves_similar_lessons_and_skips_unrelated_questions(self):
+        from t2sql.memory import ErrorMemory
+        mem = ErrorMemory(self.ENTRIES, k=2, min_score=0.2)
+        self.assertEqual([e["id"] for e in mem.top("Mỗi mức thuế suất chiếm bao nhiêu phần trăm số hóa đơn?")], ["x1"])
+        self.assertEqual(mem.top("Thời tiết ngày mai thế nào?"), [])
+
+    def test_the_question_being_evaluated_is_excluded_to_avoid_answer_leakage(self):
+        from t2sql.memory import ErrorMemory
+        mem = ErrorMemory(self.ENTRIES, k=2, min_score=0.1)
+        q = self.ENTRIES[0]["question"]
+        self.assertEqual(mem.top(q, exclude_question=q), [])
+
+    def test_missing_memory_file_means_no_memory_and_prompt_has_lessons_only_when_found(self):
+        from t2sql import prompts
+        from t2sql.memory import ErrorMemory
+        self.assertIsNone(ErrorMemory.from_file(os.path.join(tempfile.gettempdir(), "khong_co_file.json")))
+        plain = prompts.user_message("Câu hỏi mới")
+        with_lessons = prompts.user_message("Câu hỏi mới", None, self.ENTRIES[:1])
+        self.assertNotIn("Bài học", plain)
+        self.assertIn("Bài học: đếm hóa đơn bằng uniqExact", with_lessons)
+        self.assertTrue(with_lessons.rstrip().endswith("SQL:"))               # câu hỏi vẫn ở cuối prompt
+
+    def test_memory_is_off_by_default_and_on_in_the_experiment_config(self):
+        self.assertFalse(CONFIGS["production"].use_memory)
+        self.assertTrue(CONFIGS["production_memory"].use_memory)
+
+
 if __name__ == "__main__":
     unittest.main()

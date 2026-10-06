@@ -1,0 +1,56 @@
+[
+  {
+    "id": "e01",
+    "source": "h26: model đếm dòng hàng thay vì hóa đơn",
+    "question": "Tỷ lệ phần trăm số hóa đơn của mỗi mức thuế suất GTGT trong tháng 5/2025.",
+    "tags": "đếm số hóa đơn từ dòng hàng ProductInv tỷ lệ phần trăm mức thuế suất uniqExact",
+    "wrong_sql": "SELECT p.VATRate, count() * 100.0 / (SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01') FROM ProductInv AS p FINAL INNER JOIN VATInvoice AS v FINAL ON v.ComID = p.ComID AND v.id = p.InvID WHERE ... GROUP BY p.VATRate",
+    "correct_sql": "SELECT p.VATRate, uniqExact((p.ComID, p.InvID)) * 100.0 / (SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01') AS ty_le FROM ProductInv AS p FINAL INNER JOIN (SELECT ComID, id FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-05-01' AND ArisingDate < '2025-06-01') AS v ON p.ComID = v.ComID AND p.InvID = v.id WHERE p.is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' GROUP BY p.VATRate",
+    "lesson": "ProductInv có nhiều dòng cho một hóa đơn: count() ra số DÒNG, không phải số hóa đơn (tỷ lệ có thể vượt 100%). Đếm hóa đơn từ ProductInv phải dùng uniqExact((ComID, InvID)), và nối VATInvoice FINAL để loại dòng mồ côi."
+  },
+  {
+    "id": "e02",
+    "source": "o13: model không lọc Feature = 1",
+    "question": "Có bao nhiêu dòng hàng hóa trên các hóa đơn của tháng 3/2025?",
+    "tags": "dòng hàng hóa mặt hàng đếm dòng Feature",
+    "wrong_sql": "SELECT count() FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-03-01' AND InvArisingDate < '2025-04-01'",
+    "correct_sql": "SELECT count() FROM ProductInv FINAL WHERE is_deleted = 0 AND Feature = 1 AND InvArisingDate >= '2025-03-01' AND InvArisingDate < '2025-04-01'",
+    "lesson": "'Dòng hàng hóa', 'mặt hàng' chỉ tính dòng hàng hóa dịch vụ: thêm Feature = 1 (Feature 3 là dòng chiết khấu, 4 là ghi chú, NULL chưa phân loại)."
+  },
+  {
+    "id": "e03",
+    "source": "h08: model không lọc Feature = 1",
+    "question": "Có bao nhiêu dòng hàng hóa trên các hóa đơn của tháng 5/2025?",
+    "tags": "dòng hàng hóa mặt hàng đếm dòng Feature",
+    "wrong_sql": "SELECT count() FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01'",
+    "correct_sql": "SELECT count() FROM ProductInv FINAL WHERE is_deleted = 0 AND Feature = 1 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01'",
+    "lesson": "'Dòng hàng hóa', 'mặt hàng' chỉ tính dòng hàng hóa dịch vụ: thêm Feature = 1 (Feature 3 là dòng chiết khấu, 4 là ghi chú, NULL chưa phân loại)."
+  },
+  {
+    "id": "e04",
+    "source": "h20: model không loại đơn vị tính rỗng",
+    "question": "Đơn vị tính nào được dùng nhiều nhất trên các dòng hàng hóa của tháng 5/2025?",
+    "tags": "đơn vị tính Unit rỗng thống kê xếp hạng",
+    "wrong_sql": "SELECT Unit, count() AS so_dong FROM ProductInv FINAL WHERE is_deleted = 0 AND Feature = 1 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' GROUP BY Unit ORDER BY so_dong DESC LIMIT 1",
+    "correct_sql": "SELECT Unit, count() AS so_dong FROM ProductInv FINAL WHERE is_deleted = 0 AND Feature = 1 AND InvArisingDate >= '2025-05-01' AND InvArisingDate < '2025-06-01' AND Unit IS NOT NULL AND Unit != '' GROUP BY Unit ORDER BY so_dong DESC LIMIT 1",
+    "lesson": "Khoảng 77% dòng hàng không ghi đơn vị tính: khi thống kê hoặc xếp hạng đơn vị tính phải loại Unit NULL và rỗng, nếu không đứng đầu là ô trống."
+  },
+  {
+    "id": "e05",
+    "source": "lỗi từng gặp: coi VATRate = 0 ở cấp hóa đơn là thuế suất 0%",
+    "question": "Tỷ lệ phần trăm hóa đơn có thuế suất 0% trong tháng 4/2025.",
+    "tags": "thuế suất 0% VATRate = 0 hóa đơn nhiều mức thuế",
+    "wrong_sql": "SELECT countIf(VATRate = 0) * 100.0 / count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-04-01' AND ArisingDate < '2025-05-01'",
+    "correct_sql": "SELECT count() * 100.0 / (SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-04-01' AND ArisingDate < '2025-05-01') FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-04-01' AND ArisingDate < '2025-05-01' AND (ComID, id) IN (SELECT ComID, InvID FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-04-01' AND InvArisingDate < '2025-05-01' AND VATRate = 0)",
+    "lesson": "VATInvoice.VATRate = 0 KHÔNG phải thuế suất 0% (gồm hóa đơn nhiều mức hoặc chưa điền, phần lớn thật ra là 5% hoặc 8%). Thuế suất 0% phải lọc ProductInv.VATRate = 0 và nối bằng (ComID, id) IN (SELECT ComID, InvID FROM ProductInv ...)."
+  },
+  {
+    "id": "e06",
+    "source": "lỗi từng gặp: đếm hóa đơn trực tiếp từ dòng hàng",
+    "question": "Có bao nhiêu hóa đơn có dòng hàng chiết khấu thương mại trong tháng 3/2025?",
+    "tags": "đếm hóa đơn điều kiện trên dòng hàng dòng mồ côi InvID",
+    "wrong_sql": "SELECT uniqExact(InvID) FROM ProductInv FINAL WHERE is_deleted = 0 AND Feature = 3 AND InvArisingDate >= '2025-03-01' AND InvArisingDate < '2025-04-01'",
+    "correct_sql": "SELECT count() FROM VATInvoice FINAL WHERE is_deleted = 0 AND ArisingDate >= '2025-03-01' AND ArisingDate < '2025-04-01' AND (ComID, id) IN (SELECT ComID, InvID FROM ProductInv FINAL WHERE is_deleted = 0 AND InvArisingDate >= '2025-03-01' AND InvArisingDate < '2025-04-01' AND Feature = 3)",
+    "lesson": "Đếm hóa đơn phải đếm từ VATInvoice (FINAL, is_deleted = 0). ProductInv có dòng mồ côi (hóa đơn đã xóa hoặc không còn), nên đếm DISTINCT InvID trực tiếp từ ProductInv sẽ thừa."
+  }
+]
