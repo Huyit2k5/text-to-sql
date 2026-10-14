@@ -171,6 +171,8 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=int(os.environ.get("T2SQL_WORKERS") or 4))
     ap.add_argument("--oracle", action="store_true", help="dùng LLM giả trả về SQL chuẩn (kiểm tra harness)")
+    ap.add_argument("--llm-profile", default=None,
+                    help="dùng hồ sơ model qua MCP (tạo bằng trang cấu hình) thay cho model trong .env; kết quả ghi vào thư mục con riêng")
     ap.add_argument("--out", default=RESULTS)
     ap.add_argument("--db", default=None, help="URL ClickHouse (mặc định lấy T2SQL_DATABASE_URL)")
     ap.add_argument("--dataset", default=None,
@@ -207,12 +209,14 @@ def main():
 
     out_dir = args.out
     out_dir = os.path.join(out_dir, f"{ex.dialect}_{ds.name}")
+    if args.llm_profile:
+        out_dir = os.path.join(out_dir, f"llm_{args.llm_profile}")
     if args.oracle:
         out_dir = os.path.join(out_dir, "oracle")
     os.makedirs(out_dir, exist_ok=True)
     summaries, usage, all_records = {}, {}, {}
     for name in names:
-        llm = oracle_llm(items) if args.oracle else default_llm()
+        llm = oracle_llm(items) if args.oracle else default_llm(args.llm_profile)
         print(f"== {name}: {len(items)} câu ...", flush=True)
         try:
             records, secs = evaluate_config(name, items, llm, gold, args.workers, args.db,
