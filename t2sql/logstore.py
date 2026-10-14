@@ -23,6 +23,10 @@ class QueryLogger:
     def log(self, answer, **extra):
         self._write({"type": "query", **answer.to_log(), **extra})
 
+    def event(self, kind: str, **fields):
+        """Ghi một sự kiện bất kỳ (ví dụ lệnh gọi MCP: người gọi, trạng thái, thời gian). Không ghi bí mật vào đây."""
+        self._write({"type": kind, **fields})
+
     def feedback(self, answer_id: str, correct: bool, note: str = ""):
         """Người dùng đánh dấu câu trả lời đúng/sai. Câu đúng có thể đưa vào pool few-shot."""
         self._write({"type": "feedback", "id": answer_id, "correct": correct, "note": note})
