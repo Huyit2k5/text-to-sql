@@ -275,7 +275,7 @@ class TokenGate:
             if not entry:
                 body = b'{"error":"unauthorized"}'
                 await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer"),
+                            "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer, Basic realm=\"t2sql\""),
                                         (b"content-length", str(len(body)).encode())]})
                 await send({"type": "http.response.body", "body": body})
                 return

@@ -3,6 +3,7 @@
 LLM và pipeline là bản giả, không cần mạng. Riêng các test "live" chạy trên hddt thật (chỉ đọc, LLM giả), tự bỏ qua nếu không có database.
 """
 import asyncio
+import base64
 import json
 import os
 import socket
@@ -130,8 +131,14 @@ class TestTokens(TempTokens):
         self.assertEqual(f({"authorization": "Bearer abc"}), "abc")
         self.assertEqual(f({"authorization": "bearer abc"}), "abc")
         self.assertEqual(f({"x-api-key": "k1"}), "k1")
-        self.assertEqual(f({"authorization": "Basic zzz", "x-api-key": "k2"}), "k2")      # basic-auth của lớp ngoài không phải token
-        self.assertIsNone(f({"authorization": "Basic zzz"}))
+        self.assertEqual(f({"authorization": "Basic zzz", "x-api-key": "k2"}), "k2")      # X-API-Key ưu tiên hơn Basic
+        self.assertIsNone(f({"authorization": "Basic zzz"}))                              # base64 hỏng
+        enc = lambda t: "Basic " + base64.b64encode(t.encode()).decode()
+        self.assertEqual(f({"authorization": enc("ban:tok123")}), "tok123")               # mật khẩu là token
+        self.assertEqual(f({"authorization": enc("ban:tok:co:hai:cham")}), "tok:co:hai:cham")
+        self.assertEqual(f({"authorization": enc("tok123")}), "tok123")                   # chỉ có tên: coi là token
+        self.assertIsNone(f({"authorization": enc("ban:")}))
+        self.assertEqual(f({"authorization": "Bearer b1", "x-api-key": "k"}), "b1")
         self.assertIsNone(f({}))
         self.assertIsNone(f(None))
 
@@ -412,12 +419,22 @@ class TestHTTP(TempTokens):
         return asyncio.run(go())
 
     def test_no_token_or_bad_token_is_401(self):
-        for headers in ({}, {"Authorization": "Bearer sai"}, {"X-API-Key": "sai"}, {"Authorization": "Basic Zm9vOmJhcg=="}):
+        for headers in ({}, {"Authorization": "Bearer sai"}, {"X-API-Key": "sai"}, {"Authorization": "Basic Zm9vOmJhcg=="}):          # Basic foo:bar: sai token
             with self.assertRaises(LLMError, msg=str(headers)):
                 probe_tools(self.url, headers)
         r = httpx.post(self.url, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         self.assertEqual(r.status_code, 401)
-        self.assertEqual(r.headers.get("www-authenticate"), "Bearer")
+        self.assertEqual(r.headers.get("www-authenticate"), "Bearer, Basic realm=\"t2sql\"")
+
+    def test_basic_auth_with_token_as_password_works_and_wrong_password_is_401(self):
+        tok = mcp_auth.create_token("basic.test")
+        enc = lambda pw: "Basic " + base64.b64encode(f"basic.test:{pw}".encode()).decode()
+        self.assertEqual([t["name"] for t in probe_tools(self.url, {"Authorization": enc(tok)})], ["ask_data"])
+        with self.assertRaises(LLMError):
+            probe_tools(self.url, {"Authorization": enc("sai")})
+        mcp_auth.revoke_token("basic.test")
+        with self.assertRaises(LLMError):                       # thu hồi có hiệu lực ngay cả với Basic
+            probe_tools(self.url, {"Authorization": enc(tok)})
 
     def test_both_header_styles_work_and_tool_definition(self):
         tok = mcp_auth.create_token("http.test")

@@ -5,6 +5,7 @@ Server đọc lại kho theo thời gian sửa file nên thu hồi có hiệu l�
 Giới hạn tải: tối đa N câu chạy đồng thời toàn server, M câu cho mỗi người, và K lệnh mỗi phút cho mỗi người.
 Hết chỗ thì từ chối ngay (không xếp hàng) để không vượt hạn chót của client.
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -114,14 +115,25 @@ def revoke_token(label: str) -> bool:
 
 
 def token_from_headers(headers) -> str | None:
-    """Token nằm ở `Authorization: Bearer <token>` hoặc `X-API-Key: <token>` (WeKnora gửi kiểu thứ hai)."""
+    """Token nằm ở `Authorization: Bearer <token>`, `X-API-Key: <token>` (WeKnora gửi kiểu này),
+    hoặc `Authorization: Basic base64(tên:token)` (mật khẩu là token; tên chỉ để dễ đọc).
+    Thứ tự ưu tiên: Bearer, X-API-Key, Basic."""
     if not headers:
         return None
     get = headers.get
     auth = get("authorization") or get("Authorization") or ""
     if auth[:7].lower() == "bearer ":
         return auth[7:].strip() or None
-    return (get("x-api-key") or get("X-API-Key") or "").strip() or None
+    key = (get("x-api-key") or get("X-API-Key") or "").strip()
+    if key:
+        return key
+    if auth[:6].lower() == "basic ":
+        try:
+            user, sep, password = base64.b64decode(auth[6:].strip(), validate=True).decode("utf-8").partition(":")
+        except (ValueError, UnicodeDecodeError):
+            return None
+        return (password if sep else user).strip() or None       # "token" hoặc "token:" cũng được
+    return None
 
 
 class Limiter:

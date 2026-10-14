@@ -20,8 +20,10 @@ Thêm máy chủ MCP với các giá trị:
 |---|---|
 | Transport | Streamable HTTP |
 | URL | `https://<tên-máy>.<tailnet>.ts.net/mcp` |
-| Xác thực | API key, header `X-API-Key` = token (hoặc `Authorization: Bearer <token>`) |
+| Xác thực | API key, header `X-API-Key` = token (hoặc `Authorization: Bearer <token>`; hoặc Basic: tên bất kỳ, mật khẩu = token) |
 | Timeout | 30 giây (máy chủ tự trả lời trước 25 giây) |
+
+Basic auth (nếu cần): header `Authorization: Basic base64(tên:token)`, tên chỉ để dễ đọc, **mật khẩu phải là token**. Thứ tự ưu tiên nếu gửi nhiều kiểu: Bearer, `X-API-Key`, Basic. Không nên đặt token trong URL kiểu `https://tên:token@...` vì sẽ lộ trong lịch sử, log và ảnh chụp màn hình; hãy dùng trường header của WeKnora.
 
 Công cụ xuất hiện là `ask_data` (tham số: `question`, `history`, `detail`).
 

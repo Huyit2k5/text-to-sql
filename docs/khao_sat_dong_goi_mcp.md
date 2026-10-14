@@ -276,6 +276,7 @@ Cấu hình bảng và cột nằm trong `schema_docs.json` (mục `preflight`),
 - **Thu hồi có hiệu lực ngay:** server đọc lại kho token **mỗi request** (hoặc khi thời gian sửa file đổi), không nạp một lần lúc khởi động. Ghi file kiểu atomic (ghi tạm rồi đổi tên) vì CLI và server cùng đụng vào file.
 - `token-list` (không hiện token), `token-revoke --label`.
 - Cổng xác thực ở tầng HTTP: thiếu, sai hoặc hết hạn trả **401** kèm `WWW-Authenticate: Bearer`. Công cụ đọc danh tính từ `ctx.headers`.
+- Cập nhật sau giai đoạn 1: máy chủ cũng nhận `Authorization: Basic base64(tên:token)` (mật khẩu là token) theo yêu cầu của leader; ưu tiên Bearer, rồi `X-API-Key`, rồi Basic; 401 kèm cả hai thử thách `Bearer` và `Basic`. Khi có lớp ngoài dùng `Authorization` (ngrok) thì vẫn dùng `X-API-Key`.
 - Token được nhận ở **hai nơi**: `Authorization: Bearer <token>` hoặc header `X-API-Key: <token>`. Lý do: WeKnora cho cấu hình kiểu xác thực `api_key` (mặc định gửi `X-API-Key`) **cùng với** header tùy ý, nên khi có lớp ngoài dùng `Authorization` (ví dụ basic-auth của ngrok) thì token của ta đi bằng `X-API-Key`, không xung đột.
 - Vai trò **cố định `analyst`**. **Không có vai trò `admin` trong MCP** ở giai đoạn này.
 
