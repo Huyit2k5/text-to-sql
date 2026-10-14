@@ -5,12 +5,18 @@ from dataclasses import replace
 import pandas as pd
 import streamlit as st
 
+from t2sql import access, charts, config_page, llm_profiles
 from t2sql.llm import default_llm
 from t2sql.logstore import QueryLogger
 from t2sql.pipeline import CONFIGS, TextToSQL
 from t2sql.viz import choose_view
 
 st.set_page_config(page_title="Text-to-SQL", page_icon="🗄️", layout="wide")
+
+# Link mời (?invite=...): chỉ hiện trang cấu hình model, không có phần hỏi đáp hay dữ liệu.
+if st.query_params.get("invite"):
+    config_page.invite_page(st.query_params["invite"])
+    st.stop()
 
 EXAMPLES = ["Có bao nhiêu bản ghi trong bảng lớn nhất?", "Còn năm ngoái thì sao?", "Xóa toàn bộ dữ liệu"]   # khi bộ dữ liệu không khai báo example_questions
 
@@ -34,11 +40,11 @@ def database_choices():
 
 
 @st.cache_resource
-def get_pipeline(config_name, explain, consistency, db_url):
+def get_pipeline(config_name, explain, consistency, db_url, llm_profile=None, llm_version=0):
     cfg = replace(CONFIGS[config_name], explain=explain)
     if consistency:
         cfg = replace(cfg, n_candidates=3)
-    return TextToSQL(default_llm(), cfg, db=db_url, logger=QueryLogger())
+    return TextToSQL(default_llm(llm_profile), cfg, db=db_url, logger=QueryLogger())   # llm_version: đổi hồ sơ thì tạo lại
 
 
 with st.sidebar:
@@ -51,14 +57,34 @@ with st.sidebar:
     consistency = st.toggle("Self-consistency (3 phương án)", value=CONFIGS[config_name].n_candidates > 1,
                             help="Sinh nhiều câu SQL, chạy cả hai/ba và chọn kết quả được nhiều phương án đồng ý. "
                                  "Tốn 2-3 lần gọi model; cho biết độ tin cậy của câu trả lời.")
+    # Vai trò và câu hỏi gợi ý theo bộ dữ liệu của database đang chọn
+    # Vai trò đặc quyền (admin: thấy cả dữ liệu cá nhân) bị ẩn, trừ khi nhập đúng T2SQL_ADMIN_PASSWORD hoặc chạy cục bộ
+    # với T2SQL_ALLOW_ADMIN=1 (xem t2sql/access.py). Chưa có đăng nhập theo người dùng.
+    if access.admin_password() and not access.admin_always_allowed():
+        with st.expander("Chế độ quản trị"):
+            attempt = st.text_input("Mật khẩu quản trị", type="password", key="admin_pw")
+            if attempt:
+                st.session_state.admin_unlocked = access.password_matches(attempt)
+                if not st.session_state.admin_unlocked:
+                    st.error("Sai mật khẩu.")
+    privileged = access.admin_always_allowed() or st.session_state.get("admin_unlocked", False)
+    llm_profile, llm_version = None, 0
+    if privileged:   # chọn model và tạo link mời chỉ dành cho chủ hệ thống: người dùng ngrok không được tiêu khóa API của người khác
+        config_page.owner_panel()
+        profiles = {p["name"]: p for p in llm_profiles.list_profiles()}
+        if profiles:
+            choice = st.selectbox("Model", ["Mặc định (.env)"] + list(profiles))
+            if choice in profiles:
+                llm_profile, llm_version = choice, profiles[choice]["updated_at"]
     try:
-        pipe = get_pipeline(config_name, explain, consistency, dbs[db_label] or None)
+        pipe = get_pipeline(config_name, explain, consistency, dbs[db_label] or None, llm_profile, llm_version)
     except Exception as e:  # thiếu SDK / credentials / không kết nối được DB
         st.error(f"Không khởi tạo được pipeline: {e}")
         st.stop()
-    # Vai trò và câu hỏi gợi ý theo bộ dữ liệu của database đang chọn
-    roles = list(pipe.policies)
-    # Mặc định vai trò hạn chế (analyst) nếu có: người dùng demo không vô tình xem được dữ liệu cá nhân
+    roles = access.selectable_roles(pipe.policies, st.session_state.get("admin_unlocked", False))
+    if not roles:
+        st.error("Bộ dữ liệu này không có vai trò hạn chế nào để hiển thị. Đặt T2SQL_ALLOW_ADMIN=1 nếu chạy cục bộ.")
+        st.stop()
     role = st.selectbox("Vai trò người dùng", roles, index=roles.index("analyst") if "analyst" in roles else 0)
     st.caption(pipe.policies[role].describe())
     if st.button("Xóa hội thoại") or st.session_state.get("db_label") != db_label:
@@ -108,6 +134,9 @@ def render(ans, idx):
     if not res.rows:
         st.info("Không có dữ liệu thỏa điều kiện.")
         return
+    note = charts.draft_note(ans.sql)
+    if note:
+        st.caption(note)
     df = pd.DataFrame(res.rows, columns=res.columns)
     view = choose_view(res.columns, res.rows)
     if view["kind"] == "metric":
@@ -116,8 +145,10 @@ def render(ans, idx):
     elif view["kind"] in ("line", "bar"):
         x = res.columns[view["x"]]
         ys = [res.columns[i] for i in view["y"]]
-        chart_df = df.set_index(x)[ys]
-        (st.line_chart if view["kind"] == "line" else st.bar_chart)(chart_df)
+        if view["kind"] == "bar":
+            st.altair_chart(charts.bar_chart(df, x, ys[0]), width="stretch")
+        else:
+            st.line_chart(df, x=x, y=ys, x_label=x, y_label=", ".join(ys))
         st.dataframe(df, hide_index=True)
     else:
         st.dataframe(df, hide_index=True)

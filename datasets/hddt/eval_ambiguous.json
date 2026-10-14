@@ -1,0 +1,302 @@
+[
+ {
+  "id": "c01",
+  "expect": "clarify",
+  "question": "Công ty nào lớn nhất?",
+  "note": "lớn nhất theo tiêu chí nào"
+ },
+ {
+  "id": "c02",
+  "expect": "clarify",
+  "question": "Cho tôi số liệu tháng này.",
+  "note": "không nêu đại lượng"
+ },
+ {
+  "id": "c03",
+  "expect": "clarify",
+  "question": "Mặt hàng nào bán chạy nhất?",
+  "note": "bán chạy theo số lượng hay tiền; thời gian nào"
+ },
+ {
+  "id": "c04",
+  "expect": "clarify",
+  "question": "Tổng tiền hóa đơn của công ty ABC là bao nhiêu?",
+  "note": "không xác định được công ty (không có mã số thuế)"
+ },
+ {
+  "id": "c05",
+  "expect": "clarify",
+  "question": "Liệt kê các hóa đơn lớn.",
+  "note": "ngưỡng 'lớn' không xác định"
+ },
+ {
+  "id": "c06",
+  "expect": "clarify",
+  "question": "Tỷ lệ hóa đơn có vấn đề là bao nhiêu?",
+  "note": "'có vấn đề' có thể là hủy, bị thay thế, bị điều chỉnh, không hợp lệ"
+ },
+ {
+  "id": "c07",
+  "expect": "clarify",
+  "question": "Hóa đơn của khách hàng quan trọng nhất?",
+  "note": "quan trọng nhất theo tiêu chí nào"
+ },
+ {
+  "id": "c08",
+  "expect": "clarify",
+  "question": "Số hóa đơn gần đây là bao nhiêu?",
+  "note": "'gần đây' không xác định"
+ },
+ {
+  "id": "c09",
+  "expect": "clarify",
+  "question": "Tăng trưởng so với kỳ trước là bao nhiêu?",
+  "note": "không nêu đại lượng, không nêu kỳ"
+ },
+ {
+  "id": "c10",
+  "expect": "clarify",
+  "question": "Công ty nào hoạt động tốt nhất trong năm nay?",
+  "note": "tốt nhất theo tiêu chí nào"
+ },
+ {
+  "id": "n01",
+  "expect": "cannot",
+  "question": "Dự báo số hóa đơn phát hành trong quý 4 năm 2025.",
+  "note": "dự báo"
+ },
+ {
+  "id": "n02",
+  "expect": "cannot",
+  "question": "Mức độ hài lòng của khách hàng trong tháng 3/2025 là bao nhiêu?",
+  "note": "không có dữ liệu hài lòng"
+ },
+ {
+  "id": "n03",
+  "expect": "cannot",
+  "question": "Giá cổ phiếu hôm nay của các công ty phát hành hóa đơn.",
+  "note": "ngoài hệ thống"
+ },
+ {
+  "id": "n04",
+  "expect": "cannot",
+  "question": "Thời tiết ở Hà Nội ngày mai thế nào?",
+  "note": "ngoài phạm vi"
+ },
+ {
+  "id": "n05",
+  "expect": "cannot",
+  "question": "Lợi nhuận gộp của từng công ty trong tháng 3/2025.",
+  "note": "không có giá vốn"
+ },
+ {
+  "id": "n06",
+  "expect": "cannot",
+  "question": "Tồn kho hiện tại của từng mặt hàng.",
+  "note": "không có tồn kho"
+ },
+ {
+  "id": "n07",
+  "expect": "cannot",
+  "question": "Số lượt truy cập cổng tra cứu hóa đơn trong tháng 5/2025.",
+  "note": "không có log truy cập"
+ },
+ {
+  "id": "n08",
+  "expect": "cannot",
+  "question": "Tổng số nhân viên của từng công ty phát hành hóa đơn.",
+  "note": "không có số nhân viên"
+ },
+ {
+  "id": "n09",
+  "expect": "cannot",
+  "question": "Chi phí vận hành hệ thống hóa đơn trong tháng 3/2025.",
+  "note": "không có chi phí"
+ },
+ {
+  "id": "n10",
+  "expect": "cannot",
+  "question": "Đánh giá chất lượng dịch vụ của từng công ty phát hành hóa đơn.",
+  "note": "không có đánh giá"
+ },
+ {
+  "id": "a01",
+  "expect": "answer",
+  "question": "Công ty phát hành nhiều hóa đơn nhất trong tháng 3/2025 theo số hóa đơn, kèm số hóa đơn.",
+  "note": "đối chứng rõ ràng, gần c01"
+ },
+ {
+  "id": "a02",
+  "expect": "answer",
+  "question": "Tổng tiền thanh toán của tất cả hóa đơn trong tháng 3/2025.",
+  "note": "đối chứng rõ ràng, gần c02"
+ },
+ {
+  "id": "a03",
+  "expect": "answer",
+  "question": "Mặt hàng có tổng số lượng bán ra nhiều nhất trong tháng 3/2025.",
+  "note": "đối chứng rõ ràng, gần c03"
+ },
+ {
+  "id": "a04",
+  "expect": "answer",
+  "question": "Liệt kê 10 hóa đơn có tổng thanh toán lớn nhất trong tháng 3/2025.",
+  "note": "đối chứng rõ ràng, gần c05"
+ },
+ {
+  "id": "a05",
+  "expect": "answer",
+  "question": "Tỷ lệ phần trăm hóa đơn đã hủy trong tháng 3/2025.",
+  "note": "đối chứng rõ ràng, gần c06 (đã hủy có nghĩa trong tài liệu)"
+ },
+ {
+  "id": "a06",
+  "expect": "answer",
+  "question": "Tổng tiền hóa đơn của công ty có mã số thuế 0100000000 trong tháng 3/2025.",
+  "note": "đối chứng rõ ràng, gần c04 (mã số thuế là giả; kết quả rỗng vẫn là đã trả lời)"
+ },
+ {
+  "id": "a07",
+  "expect": "answer",
+  "question": "Có bao nhiêu hóa đơn trong 7 ngày gần nhất tính đến 31/03/2025?",
+  "note": "đối chứng rõ ràng, gần c08"
+ },
+ {
+  "id": "a08",
+  "expect": "answer",
+  "question": "Doanh thu tháng 3 năm 2025 là bao nhiêu?",
+  "note": "tài liệu đã định nghĩa mặc định cho 'doanh thu'"
+ },
+ {
+  "id": "k01",
+  "expect": "cannot",
+  "question": "Tổng số tiền thuế GTGT đã nộp vào ngân sách nhà nước trong tháng 3/2025.",
+  "note": "khó: dữ liệu chỉ có thuế ghi trên hóa đơn, không có số đã nộp"
+ },
+ {
+  "id": "k02",
+  "expect": "cannot",
+  "question": "Tổng công nợ phải thu của khách hàng tính đến 31/03/2025.",
+  "note": "khó: không có dữ liệu công nợ"
+ },
+ {
+  "id": "k03",
+  "expect": "cannot",
+  "question": "Số hóa đơn đã gửi email thành công cho khách hàng trong tháng 3/2025.",
+  "note": "khó: không có trạng thái gửi email"
+ },
+ {
+  "id": "k04",
+  "expect": "answer",
+  "question": "Doanh thu của từng cửa hàng trong tháng 3/2025.",
+  "note": "đối chứng: cột StoreName có thật trong VATInvoice (rất thưa: 3 dòng có giá trị trong tháng 3/2025); nhãn ban đầu 'không có dữ liệu' là sai"
+ },
+ {
+  "id": "k05",
+  "expect": "cannot",
+  "question": "Độ tuổi trung bình của người mua.",
+  "note": "khó: không có tuổi"
+ },
+ {
+  "id": "k06",
+  "expect": "cannot",
+  "question": "Giá vốn hàng bán của từng mặt hàng trong tháng 3/2025.",
+  "note": "khó: không có giá vốn"
+ },
+ {
+  "id": "k07",
+  "expect": "cannot",
+  "question": "Số hóa đơn đã được người mua mở xem trên cổng tra cứu.",
+  "note": "khó: không có log xem hóa đơn"
+ },
+ {
+  "id": "k11",
+  "expect": "clarify",
+  "question": "Tổng doanh thu theo từng công ty trong tháng 3/2025, loại bỏ hóa đơn bất thường.",
+  "note": "khó: 'bất thường' không xác định"
+ },
+ {
+  "id": "k12",
+  "expect": "clarify",
+  "question": "Số hóa đơn sai sót trong tháng 3/2025.",
+  "note": "khó: 'sai sót' có thể là bị thay thế, bị điều chỉnh, không hợp lệ"
+ },
+ {
+  "id": "k13",
+  "expect": "clarify",
+  "question": "Công ty có tăng trưởng nhanh nhất trong quý 1/2025.",
+  "note": "khó: tăng trưởng theo đại lượng nào, so với kỳ nào"
+ },
+ {
+  "id": "k14",
+  "expect": "clarify",
+  "question": "Hóa đơn của những khách hàng lớn trong tháng 3/2025.",
+  "note": "khó: 'khách hàng lớn' không xác định"
+ },
+ {
+  "id": "k15",
+  "expect": "clarify",
+  "question": "Tổng số tiền của các hóa đơn có vấn đề với cơ quan thuế.",
+  "note": "khó: 'có vấn đề' có thể là không hợp lệ hoặc đang kiểm tra"
+ },
+ {
+  "id": "k16",
+  "expect": "clarify",
+  "question": "Mặt hàng chủ lực của từng công ty.",
+  "note": "khó: chủ lực theo tiền hay số lượng; thời gian nào"
+ },
+ {
+  "id": "k17",
+  "expect": "clarify",
+  "question": "Tháng nào là tháng cao điểm của năm 2025?",
+  "note": "khó: cao điểm theo số hóa đơn hay tiền"
+ },
+ {
+  "id": "k21",
+  "expect": "answer",
+  "question": "Tổng số tiền của các hóa đơn không hợp lệ theo cơ quan thuế trong tháng 3/2025.",
+  "note": "đối chứng khó: khái niệm đã định nghĩa trong tài liệu"
+ },
+ {
+  "id": "k22",
+  "expect": "answer",
+  "question": "Số hóa đơn đã phát hành trong tháng trước.",
+  "note": "đối chứng khó: tháng tương đối, 'đã phát hành' đã định nghĩa"
+ },
+ {
+  "id": "k23",
+  "expect": "answer",
+  "question": "Có bao nhiêu hóa đơn bị thay thế trong tháng 3/2025?",
+  "note": "đối chứng khó: Status đã định nghĩa"
+ },
+ {
+  "id": "k24",
+  "expect": "answer",
+  "question": "Mặt hàng có số lượng bán ra nhiều nhất của công ty có mã số thuế 0100000000 trong tháng 3/2025.",
+  "note": "đối chứng khó"
+ },
+ {
+  "id": "k25",
+  "expect": "answer",
+  "question": "5 công ty có tổng tiền thanh toán cao nhất trong tháng 3/2025.",
+  "note": "đối chứng khó"
+ },
+ {
+  "id": "k26",
+  "expect": "answer",
+  "question": "Tỷ lệ phần trăm hóa đơn điều chỉnh tăng trong tháng 3/2025.",
+  "note": "đối chứng khó: Type đã định nghĩa"
+ },
+ {
+  "id": "k27",
+  "expect": "answer",
+  "question": "Tiền thuế trung bình mỗi hóa đơn trong tháng 3/2025.",
+  "note": "đối chứng khó"
+ },
+ {
+  "id": "k28",
+  "expect": "answer",
+  "question": "Số hóa đơn theo từng tỉnh thành trong tháng 3/2025.",
+  "note": "đối chứng khó"
+ }
+]

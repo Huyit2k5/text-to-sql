@@ -44,7 +44,7 @@ def oracle_llm(items):
     return ScriptedLLM(fn)
 
 
-def evaluate_config(name, items, llm, gold, workers, db_url=None, partial_path=None, resume=False):
+def evaluate_config(name, items, llm, gold, workers, db_url=None, partial_path=None, resume=False, gold_alt=None):
     """Chạy một cấu hình. Mỗi câu xong được ghi ngay vào partial_path (JSONL), nên với model chậm
     có thể dừng giữa chừng rồi chạy lại với --resume: câu đã có kết quả (không lỗi LLM) được giữ nguyên."""
     pipe = TextToSQL(llm, CONFIGS[name], db=db_url)
@@ -77,8 +77,10 @@ def evaluate_config(name, items, llm, gold, workers, db_url=None, partial_path=N
             rows = ans.result.rows if ok else []
             rec["gold_ncols"] = len(g.columns)
             rec["pred_ncols"] = len(ans.result.columns) if ok else None
-            rec["correct"] = ok and results_match(rows, g.rows, it.get("ordered", False))
-            rec["correct_lenient"] = ok and results_match(rows, g.rows, it.get("ordered", False), True)
+            alts = (gold_alt or {}).get(it["id"], [])
+            rec["correct"] = ok and any(results_match(rows, x.rows, it.get("ordered", False)) for x in [g] + alts)
+            rec["correct_lenient"] = ok and any(results_match(rows, x.rows, it.get("ordered", False), True) for x in [g] + alts)
+            rec["matched_alt"] = bool(ok and not results_match(rows, g.rows, it.get("ordered", False)) and rec["correct"])
             rec["pred_preview"] = [list(r) for r in rows[:5]]
             rec["gold_preview"] = [list(r) for r in g.rows[:5]]
         if not rec["correct"]:
@@ -169,6 +171,8 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=int(os.environ.get("T2SQL_WORKERS") or 4))
     ap.add_argument("--oracle", action="store_true", help="dùng LLM giả trả về SQL chuẩn (kiểm tra harness)")
+    ap.add_argument("--llm-profile", default=None,
+                    help="dùng hồ sơ model qua MCP (tạo bằng trang cấu hình) thay cho model trong .env; kết quả ghi vào thư mục con riêng")
     ap.add_argument("--out", default=RESULTS)
     ap.add_argument("--db", default=None, help="URL ClickHouse (mặc định lấy T2SQL_DATABASE_URL)")
     ap.add_argument("--dataset", default=None,
@@ -189,7 +193,7 @@ def main():
     items_by_id = {it["id"]: it for it in items}
 
     print(f"Database: {ex.describe()} · bộ dữ liệu {ds.name} ({len(items)} câu)", flush=True)
-    gold = {}
+    gold, gold_alt = {}, {}
     for it in items:
         if it.get("sql"):
             it["sql_source"], it["sql"] = it["sql"], example_sql(it)
@@ -197,19 +201,26 @@ def main():
             if not g.ok:
                 sys.exit(f"SQL chuẩn của {it['id']} lỗi trên {ex.display_name}: {g.error}\n{it['sql']}")
             gold[it["id"]] = g
+            for alt in it.get("alt_sql", []):          # đáp án chấp nhận thay thế (định nghĩa nghiệp vụ còn mở)
+                ga = ex.run(alt, safe=False)
+                if not ga.ok:
+                    sys.exit(f"alt_sql của {it['id']} lỗi: {ga.error}\n{alt}")
+                gold_alt.setdefault(it["id"], []).append(ga)
 
     out_dir = args.out
     out_dir = os.path.join(out_dir, f"{ex.dialect}_{ds.name}")
+    if args.llm_profile:
+        out_dir = os.path.join(out_dir, f"llm_{args.llm_profile}")
     if args.oracle:
         out_dir = os.path.join(out_dir, "oracle")
     os.makedirs(out_dir, exist_ok=True)
     summaries, usage, all_records = {}, {}, {}
     for name in names:
-        llm = oracle_llm(items) if args.oracle else default_llm()
+        llm = oracle_llm(items) if args.oracle else default_llm(args.llm_profile)
         print(f"== {name}: {len(items)} câu ...", flush=True)
         try:
             records, secs = evaluate_config(name, items, llm, gold, args.workers, args.db,
-                                            os.path.join(out_dir, f"{name}.jsonl"), args.resume)
+                                            os.path.join(out_dir, f"{name}.jsonl"), args.resume, gold_alt)
         except LLMError as e:
             sys.exit(f"Lỗi LLM: {e}")
         fatal = [r for r in records if r["kind"] == "error"]

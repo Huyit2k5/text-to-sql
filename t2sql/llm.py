@@ -339,9 +339,25 @@ class OpenAICompatLLM(BaseLLM):
         return text
 
 
-def default_llm() -> BaseLLM:
-    """T2SQL_PROVIDER = openai (model tự host) | anthropic (Claude). Trống: tự chọn theo tên model."""
+def llm_from_profile(name: str) -> BaseLLM:
+    """Model của người khác, nối qua MCP (hồ sơ tạo bằng trang cấu hình, xem t2sql/llm_profiles.py)."""
+    from .llm_profiles import get_profile
+    from .mcp_llm import McpLLM
+    profile = get_profile(name)
+    if not profile:
+        raise LLMError(f"Không có hồ sơ model '{name}'.")
+    return McpLLM(profile)
+
+
+def default_llm(profile: str | None = None) -> BaseLLM:
+    """profile (hoặc T2SQL_LLM_PROFILE): dùng hồ sơ MCP.
+    Không có thì T2SQL_PROVIDER = openai (model tự host) | anthropic (Claude) | mcp. Trống: tự chọn theo tên model."""
+    profile = profile or _env("T2SQL_LLM_PROFILE")
+    if profile:
+        return llm_from_profile(profile)
     provider = (_env("T2SQL_PROVIDER") or "").lower()
+    if provider == "mcp":
+        raise LLMError("T2SQL_PROVIDER=mcp cần T2SQL_LLM_PROFILE=<tên hồ sơ>.")
     if not provider:
         provider = "anthropic" if (_env("T2SQL_MODEL") or "claude").startswith("claude") else "openai"
     if provider in ("openai", "vllm", "selfhost", "local"):

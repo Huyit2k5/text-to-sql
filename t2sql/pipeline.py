@@ -1,4 +1,5 @@
 """Pipeline Text-to-SQL, bật/tắt từng cải tiến qua `Config` để làm ablation."""
+import re
 import os
 import time
 import uuid
@@ -10,6 +11,7 @@ from .checks import Issue, check_result, describe
 from .dialect import example_sql
 from .evaluation import results_match
 from .llm import BaseLLM, LLMError
+from .memory import ErrorMemory
 from .retrieval import FewShotRetriever, SchemaLinker, tables_in_sql
 from .safety import POLICIES, Policy, is_write_request
 from .sql_utils import parse_response
@@ -45,6 +47,9 @@ class Config:
     use_history: bool = False       # thêm thói quen khai thác từ lịch sử truy vấn của analyst (t2sql/history.py)
     docs_variant: str | None = None  # dùng schema_docs.<variant>.json thay cho bản đầy đủ (ví dụ "norules")
     history_parts: str = "both"     # both | conventions | snippets: phần nào của tri thức lịch sử đưa vào prompt
+    classify_first: bool = False    # một lời gọi model phân loại ANSWER / CLARIFY / CANNOT trước khi sinh SQL
+    use_memory: bool = False        # bộ nhớ sửa lỗi (t2sql/memory.py): đưa bài học của câu tương tự đã từng sai vào prompt
+    clarify_strong: bool = False    # quy tắc hỏi lại / từ chối chi tiết hơn ngay trong prompt sinh SQL (không thêm lời gọi)
 
 
 CONFIGS = {
@@ -105,6 +110,16 @@ CONFIGS = {
                                 shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
                                 guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
                                 docs_variant="v3"),
+    # production + bộ nhớ sửa lỗi (thí nghiệm hướng 3)
+    "production_memory": Config("production_memory", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=False,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                clarify_strong=True, use_memory=True),
+    # production với tài liệu schema v4 (trước khi tự xác nhận thuế suất, Feature, đơn vị tính): so sánh với v5
+    "production_docsv4": Config("production_docsv4", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
+                                shape_check=True, allow_clarify=True, rewrite_followups=True, explain=False,
+                                guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                                clarify_strong=True, docs_variant="v4"),
     # production với self-consistency (3 phương án)
     "production_sc": Config("production_sc", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                             shape_check=True, allow_clarify=True, rewrite_followups=True, explain=True,
@@ -112,11 +127,36 @@ CONFIGS = {
                             n_candidates=3),
     # explain=False: giải thích SQL là một lần gọi model thứ hai (đo trên hddt: 3,9 giây, 57% thời gian một câu hỏi).
     # Giao diện vẫn có nút bật; các cấu hình so sánh phía trên giữ explain=True để kết quả lịch sử không đổi.
+    # clarify_strong: quy tắc hỏi lại / từ chối chi tiết trong prompt sinh SQL (không tốn lời gọi). Đo trên bộ 50 câu mơ hồ /
+    # không trả lời được: từ chối đúng 32/32 (trước 30/32), không làm hỏng 94 câu thường. Các cấu hình so sánh phía trên giữ quy tắc cũ.
     "production": Config("production", use_docs=True, use_fewshot=True, use_linking=True, max_retries=3,
                          shape_check=True, allow_clarify=True, rewrite_followups=True, explain=False,
-                         guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True),
+                         guard_write_intent=True, lookup_tables=True, error_hints=True, cost_guard=True,
+                         clarify_strong=True),
+    # production + bước phân loại câu hỏi trước khi sinh SQL (thí nghiệm câu mơ hồ / không trả lời được)
+    "production_classify": Config("production_classify", use_docs=True, use_fewshot=True, use_linking=True,
+                                  max_retries=3, shape_check=True, allow_clarify=True, rewrite_followups=True,
+                                  explain=False, guard_write_intent=True, lookup_tables=True, error_hints=True,
+                                  cost_guard=True, classify_first=True),
 }
 ABLATION_ORDER = ["baseline", "docs", "fewshot", "linking", "selfcorrect"]
+
+
+_CLASSIFY_RE = re.compile(r"^\W*(ANSWER|CLARIFY|CANNOT)\b[\s:：-]*(.*)", re.I | re.S)
+
+
+def parse_classification(raw: str):
+    """(kind, payload): 'sql' = tiếp tục sinh SQL; 'clarify' / 'cannot' kèm câu hỏi lại / lý do. Không đọc được -> tiếp tục."""
+    text = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.S).strip()
+    m = _CLASSIFY_RE.match(text)
+    if not m:
+        return "sql", None
+    word, rest = m.group(1).upper(), m.group(2).strip().splitlines()[0].strip() if m.group(2).strip() else ""
+    if word == "CLARIFY":
+        return "clarify", rest or "Bạn có thể nói rõ hơn câu hỏi không?"
+    if word == "CANNOT":
+        return "cannot", rest or "Dữ liệu không có thông tin này."
+    return "sql", None
 
 
 @dataclass
@@ -190,6 +230,7 @@ class Answer:
     latency_ms: float = 0.0
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     started_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
+    memory_ids: list[str] = field(default_factory=list)   # bài học từ bộ nhớ sửa lỗi đã đưa vào prompt
     agreement: str | None = None     # self-consistency: "3/3" = mọi chuỗi cho cùng kết quả
     candidates: list[dict] = field(default_factory=list)
     reasoning: str | None = None     # mức reasoning đã dùng cho câu này (reasoning_hard)
@@ -203,6 +244,7 @@ class Answer:
             "error": r.error if r and not r.ok else None, "latency_ms": self.latency_ms,
             "attempts": [asdict(a) for a in self.attempts], "tables_in_prompt": self.tables_in_prompt,
             "agreement": self.agreement, "candidates": self.candidates, "reasoning": self.reasoning,
+            "memory_ids": self.memory_ids,
         }
 
 
@@ -231,6 +273,9 @@ class TextToSQL:
                 self.retriever = FewShotRetriever.from_file(path, k=self.config.fewshot_k)
                 for ex in self.retriever.examples:
                     ex["sql"] = example_sql(ex)
+        self.memory = ErrorMemory.from_file(os.path.join(os.path.dirname(self.dataset.docs_path), "error_memory.json"),
+                                            min_score=float(os.environ.get("T2SQL_MEMORY_MIN_SCORE") or 0.2)) \
+            if self.config.use_memory and self.dataset.docs_path else None
         self.linker = SchemaLinker(self.schema, top_k=self.config.linking_top_k) if self.config.use_linking else None
         self.lookups = self._load_lookups() if self.config.lookup_tables else {}
         self.history = self._load_history() if self.config.use_history else None
@@ -329,10 +374,22 @@ class TextToSQL:
             hist = self.history.render(set(schema.tables), q, exclude_columns=denied, parts=cfg.history_parts)
             if hist:
                 schema_text += "\n\n" + hist
-        system = prompts.sql_system(schema_text, cfg.allow_clarify, self.dialect)
+        if cfg.classify_first:
+            t_cls = time.perf_counter()
+            raw = self.llm.complete(prompts.classify_system(schema_text), [{"role": "user", "content": q}],
+                                    max_tokens=1000)
+            kind, payload = parse_classification(raw)
+            if kind != "sql":
+                ans.attempts.append(Attempt(raw=raw, kind=kind, sql=None,
+                                            llm_ms=round((time.perf_counter() - t_cls) * 1000, 1)))
+                ans.kind, ans.message = kind, payload
+                return
+        system = prompts.sql_system(schema_text, cfg.allow_clarify, self.dialect, cfg.clarify_strong)
         reasoning = cfg.reasoning_hard if cfg.reasoning_hard and looks_hard(q, len(schema.tables)) else None
         ans.reasoning = reasoning
-        messages = [{"role": "user", "content": prompts.user_message(q, examples)}]
+        lessons = self.memory.top(q, exclude_question=exclude_example) if self.memory else []
+        ans.memory_ids = [e["id"] for e in lessons]
+        messages = [{"role": "user", "content": prompts.user_message(q, examples, lessons)}]
 
         if cfg.n_candidates <= 1:
             chain = self._chain(system, messages, policy, q, temperature=None, reasoning=reasoning)

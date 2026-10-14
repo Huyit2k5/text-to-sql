@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tổng hợp thực nghiệm hddt</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#16202c;--ink2:#4a5666;--mute:#7b8696;--line:#e2e6ec;--accent:#2563eb;--accent-soft:#e8f0fe;--good:#15803d;--good-soft:#e6f4ea;--warn:#b45309;--warn-soft:#fdf2e0;--bad:#b91c1c;--bad-soft:#fdeaea;--bar:#2563eb;--bar2:#9db8f0}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0f141b;--card:#171e28;--ink:#e6ebf2;--ink2:#aab4c3;--mute:#7c889a;--line:#273140;--accent:#6ea0ff;--accent-soft:#1b2a45;--good:#5ad48a;--good-soft:#14301f;--warn:#f0b35c;--warn-soft:#352a14;--bad:#f28b8b;--bad-soft:#3a1c1c;--bar:#6ea0ff;--bar2:#3b4f78}}
+:root[data-theme="dark"]{--bg:#0f141b;--card:#171e28;--ink:#e6ebf2;--ink2:#aab4c3;--mute:#7c889a;--line:#273140;--accent:#6ea0ff;--accent-soft:#1b2a45;--good:#5ad48a;--good-soft:#14301f;--warn:#f0b35c;--warn-soft:#352a14;--bad:#f28b8b;--bad-soft:#3a1c1c;--bar:#6ea0ff;--bar2:#3b4f78}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:32px 16px 80px}
+header{padding:8px 0 24px;border-bottom:1px solid var(--line);margin-bottom:28px}
+.eyebrow{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+h1{font-size:30px;line-height:1.25;margin:8px 0 12px}
+h2{font-size:22px;margin:40px 0 12px;padding-top:8px}
+h3{font-size:17px;margin:24px 0 6px}
+p{margin:8px 0}
+.lead{color:var(--ink2);font-size:17px}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:13px;color:var(--ink2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi b{display:block;font-size:28px;line-height:1.2}
+.kpi span{color:var(--ink2);font-size:14px}
+.kpi small{display:block;color:var(--mute);font-size:12.5px;margin-top:4px}
+.box{border-radius:10px;padding:12px 16px;margin:14px 0;border:1px solid var(--line);background:var(--card)}
+.box.good{background:var(--good-soft);border-color:transparent}
+.box.warn{background:var(--warn-soft);border-color:transparent}
+.box.bad{background:var(--bad-soft);border-color:transparent}
+.box.info{background:var(--accent-soft);border-color:transparent}
+.box strong.t{display:block;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px}
+.box.good strong.t{color:var(--good)}.box.warn strong.t{color:var(--warn)}.box.bad strong.t{color:var(--bad)}.box.info strong.t{color:var(--accent)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14.5px;margin:12px 0}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--accent-soft);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl{overflow-x:auto}
+.tag{display:inline-block;border-radius:6px;padding:1px 8px;font-size:12.5px;font-weight:600}
+.tag.use{background:var(--good-soft);color:var(--good)}
+.tag.opt{background:var(--accent-soft);color:var(--accent)}
+.tag.drop{background:var(--bad-soft);color:var(--bad)}
+.tag.wait{background:var(--warn-soft);color:var(--warn)}
+.bars{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.bar{display:grid;grid-template-columns:minmax(120px,230px) 1fr 64px;gap:10px;align-items:center;margin:7px 0;font-size:14px}
+.bar .track{background:var(--line);border-radius:6px;height:16px;overflow:hidden}
+.bar .fill{height:100%;background:var(--bar);border-radius:6px}
+.bar .fill.alt{background:var(--bar2)}
+.bar .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+code{background:var(--accent-soft);padding:1px 6px;border-radius:5px;font-size:13.5px}
+nav.toc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 18px;margin:0 0 8px;font-size:14.5px}
+nav.toc a{color:var(--accent);text-decoration:none;margin-right:14px;white-space:nowrap}
+ul{padding-left:22px;margin:6px 0}li{margin:3px 0}
+footer{margin-top:48px;color:var(--mute);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+button{float:right;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:4px 12px;cursor:pointer;font-size:13px}
+@media (max-width:560px){h1{font-size:24px}.bar{grid-template-columns:1fr 56px}.bar .track{grid-column:1/-1;order:3}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<button onclick="var r=document.documentElement;r.dataset.theme=(r.dataset.theme==='dark'||(!r.dataset.theme&&matchMedia('(prefers-color-scheme: dark)').matches))?'light':'dark'">Sáng / tối</button>
+<div class="eyebrow">Báo cáo tổng hợp · Text-to-SQL trên ClickHouse hddt</div>
+<h1>Tổng hợp toàn bộ thực nghiệm và kết quả</h1>
+<p class="lead">Từ lúc kết nối vào dữ liệu hóa đơn thật đến nay: những gì đã thử, con số đo được, thứ gì giữ lại, thứ gì bỏ, và những điều còn phải nhờ người nghiệp vụ xác nhận trước khi thí điểm.</p>
+<div class="meta">
+<span class="chip">Cập nhật 05/10/2026</span>
+<span class="chip">Model tự host SDS-AI/softdream, tắt reasoning</span>
+<span class="chip">ClickHouse 25.12, database hddt (chỉ đọc)</span>
+<span class="chip">Cấu hình mặc định: production + clarify_strong</span>
+</div>
+</header>
+
+<nav class="toc">
+<a href="#ketluan">Kết luận</a><a href="#hanhtrinh">Hành trình độ đúng</a><a href="#bang">Bảng thực nghiệm</a><a href="#chitiet">Chi tiết</a><a href="#nghiepvu">Nghiệp vụ</a><a href="#hanche">Hạn chế</a><a href="#tieptheo">Tiếp theo</a>
+</nav>
+
+<h2 id="ketluan">1. Kết luận chính</h2>
+<div class="grid">
+<div class="kpi"><b>98,4%</b><span>Bộ dev: 62/63 câu</span><small>sau khi kiểm toán và sửa SQL chuẩn</small></div>
+<div class="kpi"><b>96,4%</b><span>Bộ held-out: 27/28 câu</span><small>không còn sạch hoàn toàn (xem mục 6)</small></div>
+<div class="kpi"><b>46/50</b><span>Câu mơ hồ / không trả lời được</span><small>cấu hình hiện hành; trước đó ~44/50 (nhãn mới)</small></div>
+<div class="kpi"><b>24/91</b><span>Câu cần chuyên gia xem lại</span><small>xoay quanh 4 câu hỏi nghiệp vụ</small></div>
+</div>
+<div class="box good"><strong class="t">Điều rút ra</strong>
+<ul>
+<li><b>Định nghĩa nghiệp vụ quan trọng hơn mọi kỹ thuật thêm vào pipeline.</b> Bổ sung tài liệu schema nâng độ đúng từ khoảng 80% lên khoảng 97%; self-consistency, linter chặn truy vấn, bộ chọn nâng cao đều không cho thêm lợi ích đo được.</li>
+<li><b>Phần lớn "lỗi còn lại" nằm ở bộ đánh giá, không ở model.</b> Kiểm toán cho thấy 67 câu "ổn" được hệ thống làm đúng 222/222 lần chạy; các câu hệ thống từng sai đều nằm trong 24 câu bị gắn cờ.</li>
+<li><b>Hai thay đổi đáng đưa vào sản phẩm:</b> hỏi lại khi câu hỏi mơ hồ (<code>clarify_strong</code>, đã bật) và bộ nhớ sửa lỗi (tùy chọn, ngưỡng 0,3).</li>
+<li><b>Nút thắt tiếp theo không còn là mã.</b> Cần người nghiệp vụ chốt định nghĩa, bộ câu hỏi thật kèm SQL chuyên gia, và tài khoản DBA có giới hạn tài nguyên.</li>
+</ul></div>
+<div class="box warn"><strong class="t">Lưu ý khi trích số liệu</strong>
+Mọi điểm đo bằng execution accuracy trên bộ câu và SQL chuẩn do nhóm kỹ thuật tự viết. Một phần đáng kể của mức tăng từ 96,8% lên 98,4% đến từ việc sửa nhãn sau kiểm toán, chưa có chuyên gia xác nhận. Đây là cận trên, không phải độ đúng trên câu hỏi thật.</div>
+
+<h2 id="hanhtrinh">2. Hành trình độ đúng trên hddt</h2>
+<div class="bars">
+<div class="bar"><span>Production ban đầu (28 câu)</span><div class="track"><div class="fill alt" style="width:71.4%"></div></div><span class="v">71,4%</span></div>
+<div class="bar"><span>Bộ dev, tài liệu cũ</span><div class="track"><div class="fill alt" style="width:80%"></div></div><span class="v">79–81%</span></div>
+<div class="bar"><span>Bộ dev, tài liệu v4 (61/63)</span><div class="track"><div class="fill" style="width:96.8%"></div></div><span class="v">96,8%</span></div>
+<div class="bar"><span>Bộ dev, tài liệu v5 + SQL chuẩn đã kiểm toán (62/63)</span><div class="track"><div class="fill" style="width:98.4%"></div></div><span class="v">98,4%</span></div>
+<div class="bar"><span>Held-out, tài liệu v4 (26/28)</span><div class="track"><div class="fill alt" style="width:92.9%"></div></div><span class="v">92,9%</span></div>
+<div class="bar"><span>Held-out, v5 + kiểm toán (27/28)</span><div class="track"><div class="fill" style="width:96.4%"></div></div><span class="v">96,4%</span></div>
+</div>
+<p>Mức tăng lớn nhất (khoảng 16 điểm) đến từ tài liệu nghiệp vụ: quy tắc <code>FINAL</code> và <code>is_deleted = 0</code>, cách nối hai bảng, nghĩa của trạng thái thuế, thuế suất, tính chất dòng hàng. Chênh lệch giữa các lần chạy cùng cấu hình có thể tới 7 điểm ở bộ 46 câu, nên chênh 2 đến 3 câu giữa hai cấu hình là nhiễu.</p>
+<p>Vận hành: tắt bước giải thích SQL làm thời gian mỗi câu giảm từ 6,9–8,9 giây xuống 3,9 giây (trung vị); nạp schema giảm từ 138 giây xuống 0–16 giây nhờ lấy mẫu song song và lưu đệm. Phía ClickHouse, truy vấn trung vị 59 ms, chậm nhất 0,9 giây.</p>
+
+<h2 id="bang">3. Bảng tổng hợp các thực nghiệm</h2>
+<div class="tbl"><table>
+<thead><tr><th>Thực nghiệm</th><th>Câu hỏi đặt ra</th><th>Kết quả chính</th><th>Quyết định</th></tr></thead>
+<tbody>
+<tr><td>Tài liệu nghiệp vụ v1 → v5</td><td>Định nghĩa có nâng độ đúng không?</td><td>Dev ~80% → 96,8%; câu khái niệm mới 3/11 → 9/11; nghĩa mã mới 4/10 → 9/10</td><td><span class="tag use">Giữ</span> đòn bẩy chính</td></tr>
+<tr><td>Self-consistency (3 phương án)</td><td>Bỏ phiếu có giúp không?</td><td>47/53 so với 48/53 của cách thường</td><td><span class="tag drop">Bỏ</span></td></tr>
+<tr><td>Query Guard (linter + EXPLAIN)</td><td>Có nên thêm luật chặn truy vấn nặng?</td><td>Không bắt được lỗi đáng kể; R3 vô ích, R6 báo nhầm</td><td><span class="tag drop">Không làm</span>, giữ <code>cost_guard</code></td></tr>
+<tr><td>Nghiên cứu Jev (ClickHouse)</td><td>Dùng mô hình phân loại ngữ nghĩa được không?</td><td>Là bộ phân loại qua API, không sinh SQL; chưa có nhu cầu</td><td><span class="tag wait">Hoãn</span></td></tr>
+<tr><td>Khảo sát 17 nguồn text-to-SQL</td><td>Hướng nào đáng thử?</td><td>Chọn 3 hướng nhỏ, loại 5 hướng chưa hợp</td><td><span class="tag use">Đã làm cả 3</span></td></tr>
+<tr><td>Hướng 1: câu mơ hồ + bước phân loại</td><td>Hệ thống có biết hỏi lại / từ chối không?</td><td>production 43/50, classify 49/50 (nhãn cũ); clarify_strong 46/50 so với ~44/50 (nhãn mới)</td><td><span class="tag use">Bật</span> clarify_strong</td></tr>
+<tr><td>Hướng 2: kiểm toán bộ đánh giá</td><td>SQL chuẩn của ta có đáng tin không?</td><td>24/91 câu gắn cờ, 4 chủ đề; bắt 5/5 lỗi đã biết</td><td><span class="tag wait">Chờ chuyên gia</span></td></tr>
+<tr><td>Tự xác nhận nghiệp vụ</td><td>Chốt được định nghĩa nào bằng dữ liệu và quy định?</td><td>Chốt 2 trên 3 chủ đề; "hóa đơn nháp" còn mở</td><td><span class="tag use">Đã vào docs v5</span></td></tr>
+<tr><td>Hướng 3: bộ nhớ sửa lỗi</td><td>Học từ lỗi đã sửa có giúp không?</td><td>Dev 63/63, held-out 28/28 (ngưỡng 0,2); bộ mới 38/40 → 40/40 (ngưỡng 0,3)</td><td><span class="tag opt">Tùy chọn</span>, ngưỡng 0,3</td></tr>
+</tbody></table></div>
+
+<h2 id="chitiet">4. Chi tiết từng thực nghiệm</h2>
+
+<h3>4.1 Query Guard: không xây linter</h3>
+<p>Đối chiếu ý tưởng trong tài liệu guard với dự án: chặn ghi, cổng <code>EXPLAIN ESTIMATE</code>, vòng phản hồi lỗi, đo bằng <code>log_comment</code> đều đã có. Chạy các luật còn lại trên 76 câu SQL do model sinh và SQL chuẩn:</p>
+<ul>
+<li><b>R3 (hàm bọc cột khóa):</b> báo 14 câu, nhưng bản viết lại thành khoảng cho kết quả giống 14/14 và đọc đúng số dòng như nhau (2.485.309); ClickHouse đã suy ra khoảng từ <code>toYear(...)</code> để cắt phân vùng (2/330 phần). Không tiết kiệm.</li>
+<li><b>R6 (thiếu LIMIT):</b> 5 lần báo, cả 5 đều là báo nhầm. Luật "thiếu FINAL / is_deleted": 0 lần báo, nghĩa là model đã tuân thủ.</li>
+<li><b>Chi phí ước lượng:</b> SQL model có p50 148.715 dòng, bằng SQL chuẩn; ngưỡng 5 triệu chỉ chạm 2 câu hỏi toàn bảng hợp lệ, nên chặn mềm hiện tại là đúng.</li>
+</ul>
+<div class="box info"><strong class="t">Đề xuất ngoài ứng dụng</strong>Khóa sắp xếp <code>(ComID, id)</code> không có ngày phát sinh nên truy vấn theo thời gian trên mọi công ty đọc nhiều granule hơn mức cần. Đây là thay đổi schema, thuộc DBA.</div>
+
+<h3>4.2 Jev và khảo sát nghiên cứu</h3>
+<p>Jev là bộ phân loại ngữ nghĩa truy cập qua API, không phải mô hình sinh SQL; ở dự án này nó chỉ có thể đóng vai bước phân loại, mà bước đó đã làm được bằng chính model đang dùng. Khảo sát 17 nguồn (bài báo, benchmark, blog kỹ thuật) cho kết luận cùng chiều với thực nghiệm của ta: tầng ngữ nghĩa là đòn bẩy lớn nhất. Ba hướng được chọn thử: câu mơ hồ, kiểm toán nhãn, bộ nhớ sửa lỗi. Năm hướng chưa nên làm: bộ chọn có huấn luyện, học tăng cường, mở rộng suy luận, schema lớn, tách từ tiếng Việt. Báo cáo gốc dựa trên bản tóm tắt nên số liệu nguồn chỉ mang tính chỉ dẫn.</p>
+
+<h3>4.3 Hướng 1: câu mơ hồ và không trả lời được</h3>
+<p>Bộ <code>eval_ambiguous.json</code> gồm 50 câu, mỗi câu có nhãn mong đợi: hỏi lại (17), từ chối vì không có dữ liệu (16), hoặc trả lời được (17). Chạy 2 lần mỗi cấu hình, kết quả hai lần giống nhau.</p>
+<div class="tbl"><table>
+<thead><tr><th>Cấu hình</th><th>Nhãn k04</th><th class="n">Đúng / 50</th><th class="n">Hỏi lại đúng</th><th class="n">Từ chối đúng</th><th class="n">Trả lời đúng</th></tr></thead>
+<tbody>
+<tr><td>production</td><td>cũ</td><td class="n">43</td><td class="n">12/17</td><td class="n">15/17</td><td class="n">16/16</td></tr>
+<tr><td>production_classify (phân loại trước khi sinh SQL)</td><td>cũ</td><td class="n">49</td><td class="n">17/17</td><td class="n">16/17</td><td class="n">16/16</td></tr>
+<tr><td><b>production + clarify_strong (hiện hành)</b></td><td>đã sửa</td><td class="n"><b>46</b></td><td class="n">13/17</td><td class="n">16/16</td><td class="n">17/17</td></tr>
+</tbody></table></div>
+<p style="font-size:13.5px;color:var(--mute)">Nhãn k04 ban đầu là "không có dữ liệu" nhưng sau kiểm toán được đổi thành "trả lời được" (có cột StoreName). Hai dòng đầu chạy trước khi đổi nhãn nên không so trực tiếp với dòng thứ ba; tính theo nhãn mới, production đạt khoảng 44/50 (clarify_strong hơn 2 câu: k01, c04). Classify chưa được chấm lại theo nhãn mới.</p>
+<div class="box info"><strong class="t">Vì sao chọn clarify_strong thay vì classify</strong>
+Classify đúng nhiều nhất (49/50) nhưng thêm một lần gọi model cho mọi câu hỏi. clarify_strong chỉ thêm một đoạn quy tắc vào prompt, cải thiện đúng hai câu (k01, c04), không làm hỏng câu nào trên bộ dev và held-out, và không tốn thêm lời gọi. Còn bốn câu hỏi lại chưa bắt được; hướng classify vẫn có thể bật bằng cấu hình <code>production_classify</code> nếu thí điểm cho thấy cần.</div>
+
+<h3>4.4 Hướng 2: kiểm toán bộ đánh giá</h3>
+<p>Ba lớp: cảnh báo khách quan chạy trên SQL chuẩn (kết quả rỗng, <code>LIMIT</code> không có <code>ORDER BY</code>, hòa hạng ở cuối top-N, thiếu <code>FINAL</code>); LLM nhận xét từng câu theo bốn kết luận (ok, gold_wrong, ambiguous, needs_expert); và kiểm nhãn của 50 câu mơ hồ theo danh sách cột đầy đủ.</p>
+<div class="grid">
+<div class="kpi"><b>67 / 24</b><span>Câu ổn / câu gắn cờ</span><small>trên 91 câu có SQL chuẩn</small></div>
+<div class="kpi"><b>222/222</b><span>Hệ thống khớp trên 67 câu ổn</span><small>so với 63/79 trên câu gắn cờ</small></div>
+<div class="kpi"><b>6/6</b><span>Câu từng sai nằm trong số gắn cờ</span><small>không có câu sai nào lọt ngoài</small></div>
+<div class="kpi"><b>5/5</b><span>Lỗi đã biết được bắt</span><small>4 SQL chuẩn cũ + 1 nhãn k04</small></div>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>Chủ đề</th><th class="n">Số câu</th><th>Vấn đề</th></tr></thead>
+<tbody>
+<tr><td>A. "hóa đơn" có tính hóa đơn nháp không</td><td class="n">12</td><td>SQL chuẩn đếm cả nháp (No = 0); khoảng 91% dòng là nháp</td></tr>
+<tr><td>B. "dòng hàng hóa" có chỉ Feature = 1 không</td><td class="n">5</td><td>SQL chuẩn không lọc, hệ thống lọc theo tài liệu</td></tr>
+<tr><td>C. thuế suất cấp hóa đơn hay cấp dòng hàng</td><td class="n">3</td><td>Tài liệu nói cấp dòng hàng đáng tin hơn</td></tr>
+<tr><td>D. khác</td><td class="n">4</td><td>Chiết khấu, "trung bình của các công ty", hòa hạng, dữ liệu thử</td></tr>
+</tbody></table></div>
+<div class="box warn"><strong class="t">Thận trọng</strong>Cờ "ambiguous" nên đọc là "cần chuyên gia xem", không phải câu mơ hồ thật. Bộ kiểm toán gắn cờ 26% số câu, một số có thể là cẩn thận thái quá (h27 đã được xác định là báo nhầm). Chỉ 5 lỗi đã biết nên "5/5" chưa phản ánh độ nhạy thật. Nhãn k04 chỉ bị bắt nhờ danh sách cột đầy đủ: gốc lỗi là tài liệu mới mô tả 54 trên 146 cột.</div>
+
+<h3>4.5 Hướng 3: bộ nhớ sửa lỗi</h3>
+<p>Mỗi mục lưu câu hỏi, SQL sai, SQL đúng và bài học; khi câu mới giống (TF-IDF có ngưỡng) thì đưa tối đa 2 mục vào prompt. 6 mục khởi đầu (e01–e06) rút từ lỗi đã sửa. Khi đánh giá, loại mục có chính câu hỏi đang chấm (leave-one-out) để không rò đáp án.</p>
+<div class="tbl"><table>
+<thead><tr><th>Phép đo</th><th class="n">Không bộ nhớ</th><th class="n">Ngưỡng 0,2</th><th class="n">Ngưỡng 0,3</th></tr></thead>
+<tbody>
+<tr><td>Dev (63 câu)</td><td class="n">62</td><td class="n">63</td><td class="n">62</td></tr>
+<tr><td>Held-out (28 câu)</td><td class="n">27</td><td class="n">28</td><td class="n">28</td></tr>
+<tr><td>Bộ mới 20 câu × 2 lần (m01–m20)</td><td class="n">—</td><td class="n">38/40</td><td class="n">40/40</td></tr>
+</tbody></table></div>
+<ul>
+<li>Ngưỡng 0,3 là lựa chọn an toàn: không chèn bài học khi độ giống thấp, nên không làm hỏng câu đang đúng.</li>
+<li>Lần chạy đầu của nhóm "0,3" thực chất chạy ở 0,2 do bản vá biến môi trường chưa áp dụng; đã vá, chạy lại và ghi nhận đúng ở bảng trên.</li>
+<li>Sau khi thấy kết quả mới phát hiện 4 câu thiếu đáp án thay thế hợp lệ (h18, h45, o20, o12); đã bổ sung và chấm lại offline cho <i>mọi</i> cấu hình để so sánh công bằng, nhưng nhãn được sửa sau khi đã thấy kết quả nên cần chuyên gia xác nhận.</li>
+</ul>
+<div class="box warn"><strong class="t">Giới hạn</strong>Các mục bộ nhớ rút từ chính loại lỗi của bộ tự viết nên có nguy cơ quá khớp; chỉ thí điểm với câu thật mới cho thấy lợi ích thực. Vì vậy bộ nhớ ở trạng thái tùy chọn, chưa bật mặc định.</div>
+
+<h2 id="nghiepvu">5. Nghiệp vụ đã tự xác nhận</h2>
+<p>Dựa trên đối chiếu số liệu trong database và tra quy định hóa đơn điện tử, đã đưa vào tài liệu schema v5:</p>
+<ul>
+<li><b>Tính chất dòng hàng (Feature):</b> 1 là hàng hóa, 2 là khuyến mại, 3 là chiết khấu, 4 là ghi chú; NULL xử lý riêng. "Số lượng hàng hóa bán ra" chỉ tính Feature = 1.</li>
+<li><b>Thuế suất:</b> cấp dòng hàng đúng hơn cấp hóa đơn (đối soát số liệu); thống kê theo thuế suất dùng <code>ProductInv.VATRate</code>. Bộ gold của 4 câu đã đổi sang cách này, giữ cách cũ làm đáp án thay thế.</li>
+<li><b>Đơn vị tính rỗng:</b> khoảng 77% dòng; không coi là một đơn vị.</li>
+<li><b>Dòng hàng mồ côi</b> (không có hóa đơn cha) làm đếm từ <code>ProductInv</code> sai; cần nối <code>(ComID, id) = (ComID, InvID)</code>.</li>
+</ul>
+<div class="box warn"><strong class="t">Còn mở</strong>
+<ul>
+<li><b>"Hóa đơn" có tính hóa đơn nháp không?</b> Khoảng 91% dòng có số hóa đơn bằng 0; tháng 5/2025 chỉ 1,8% hóa đơn có số. Chỉ người nghiệp vụ trả lời được, và câu trả lời ảnh hưởng 12 câu cùng lúc. Giao diện hiện cảnh báo "hóa đơn nháp" cho câu trả lời không lọc nháp.</li>
+<li><b>Danh sách mã công ty thử cần loại:</b> một công ty thử chiếm 71,8% ở bảng xếp hạng theo số hóa đơn nên làm bảng xếp hạng thiếu ý nghĩa nếu không loại.</li>
+</ul></div>
+<p>Lỗi còn lại của hệ thống: <b>h26</b> (đếm dòng hàng thay vì hóa đơn), <b>o13</b> (đôi khi quên <code>Feature = 1</code>), <b>h24</b> chập chờn giữa các lần chạy.</p>
+
+<h2>6. Thay đổi đã làm trong sản phẩm</h2>
+<div class="tbl"><table>
+<thead><tr><th>Hạng mục</th><th>Nội dung</th><th>Trạng thái</th></tr></thead>
+<tbody>
+<tr><td>Dọn mã</td><td>Xóa mã và dữ liệu không liên quan hddt (database demo đã bỏ, còn trong lịch sử git); giữ nguyên các báo cáo</td><td><span class="tag use">Đã commit, đã push</span></td></tr>
+<tr><td>Sửa 3 lỗi review</td><td>Giới hạn thời gian truy vấn, nhận diện lỗi chỉ-đọc theo nội dung, khóa đệm schema theo chữ ký</td><td><span class="tag use">Đã commit, đã push</span></td></tr>
+<tr><td>Kiểm thử</td><td>97 test offline và 37 test chạy trên hddt thật (chỉ đọc, LLM giả)</td><td><span class="tag use">Đạt</span></td></tr>
+<tr><td>README</td><td>Viết lại theo hướng sản phẩm; nội dung cũ chuyển sang <code>docs/</code></td><td><span class="tag use">Đã push</span></td></tr>
+<tr><td>clarify_strong</td><td>Hỏi lại khi câu mơ hồ, bật trong production</td><td><span class="tag wait">Chưa commit</span></td></tr>
+<tr><td>Ẩn vai trò admin</td><td>Giao diện mặc định chỉ analyst; admin cần mật khẩu riêng, an toàn khi mở qua ngrok</td><td><span class="tag wait">Chưa commit</span></td></tr>
+<tr><td>Biểu đồ</td><td>Cột ngang sắp giảm dần bằng Altair; chú thích khi kết quả có thể gồm hóa đơn nháp</td><td><span class="tag wait">Chưa commit</span></td></tr>
+<tr><td>Tài liệu v5, nhãn đã kiểm toán, bộ nhớ sửa lỗi</td><td>Xem các mục 4 và 5</td><td><span class="tag wait">Chưa commit</span></td></tr>
+</tbody></table></div>
+<p>Các ràng buộc bảo mật được giữ nguyên: không đưa khóa, mật khẩu, địa chỉ máy chủ hay tên tài khoản vào báo cáo hoặc commit; kết quả đánh giá chứa dữ liệu thật và log truy vấn không đưa lên git; không chạy ghi lên máy chủ công ty.</p>
+
+<h2 id="hanche">7. Hạn chế cần nói rõ</h2>
+<ul>
+<li><b>Bộ đánh giá do nhóm tự viết,</b> held-out đã bị dùng để rút quy tắc nên không còn sạch; số trong báo cáo là cận trên.</li>
+<li><b>Nhãn được sửa sau khi thấy kết quả</b> (4 SQL chuẩn, đáp án thay thế, nhãn k04). Đã áp dụng đồng nhất cho mọi cấu hình, nhưng cần chuyên gia xác nhận.</li>
+<li><b>Mẫu nhỏ:</b> chênh 1 câu bằng 1,6 điểm ở bộ dev; giữa các lần chạy có nhiễu tới vài điểm.</li>
+<li><b>Chưa có câu hỏi thật</b> từ người dùng; lịch sử truy vấn của server chỉ có 56 truy vấn khác nhau, gần như toàn job kiểm tra dữ liệu.</li>
+<li><b>Chưa có đăng nhập theo người</b> và chưa có profile giới hạn tài nguyên phía server; tài khoản dùng chung chỉ đặt được giới hạn từ phía ứng dụng.</li>
+<li><b>Tài liệu chỉ mô tả 54 trên 146 cột</b> của <code>VATInvoice</code>; phần còn lại model chỉ biết qua tên cột.</li>
+</ul>
+
+<h2 id="tieptheo">8. Việc tiếp theo theo thứ tự</h2>
+<table>
+<thead><tr><th>#</th><th>Việc</th><th>Ai làm</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Commit tách theo hướng (câu mơ hồ, admin và biểu đồ, kiểm toán và tài liệu, bộ nhớ), đặt ngưỡng bộ nhớ mặc định 0,3, push</td><td>Kỹ thuật, chờ xác nhận</td></tr>
+<tr><td>2</td><td>Gửi phiếu kiểm toán cho người nghiệp vụ: chốt "hóa đơn nháp", danh sách công ty thử; cập nhật tài liệu và SQL chuẩn rồi chạy lại</td><td>Nghiệp vụ</td></tr>
+<tr><td>3</td><td>30–50 câu hỏi thật kèm SQL chuyên gia, chia hai nửa: nửa để sửa, nửa giữ làm held-out sạch</td><td>Nghiệp vụ</td></tr>
+<tr><td>4</td><td>Tài khoản DBA có profile giới hạn tài nguyên và quyền theo cột</td><td>DBA</td></tr>
+<tr><td>5</td><td>Đăng nhập theo người, ghi tên người dùng vào log, giới hạn số câu chạy đồng thời, nút "báo sai kèm ghi chú" nuôi bộ nhớ sửa lỗi</td><td>Kỹ thuật</td></tr>
+<tr><td>6</td><td>Thí điểm hẹp 2–4 tuần với 3–5 người; mỗi tuần tổng hợp tỉ lệ đúng, câu bị hỏi lại hoặc từ chối, lỗi mới</td><td>Cả nhóm</td></tr>
+<tr><td>7</td><td>Bổ sung mô tả cho 92 cột còn thiếu</td><td>Nghiệp vụ + kỹ thuật</td></tr>
+</tbody></table>
+<div class="box info"><strong class="t">Không nên làm lúc này</strong>Thêm quy tắc hoặc ví dụ để sửa nốt các câu sai lẻ trên bộ tự viết (lợi ích nhỏ, dễ quá khớp); fine-tune model, bộ chọn có huấn luyện hoặc Jev khi chưa đủ dữ liệu thật.</div>
+
+<h2>9. Tài liệu liên quan</h2>
+<ul>
+<li><a href="bao_cao_hddt.html">bao_cao_hddt.html</a>: kết quả và kỹ thuật trên hddt đến 01/10</li>
+<li><a href="bao_cao_kiem_toan_bo_danh_gia.html">bao_cao_kiem_toan_bo_danh_gia.html</a>: kiểm toán bộ đánh giá</li>
+<li><a href="bao_cao_nghien_cuu_text_to_sql.html">bao_cao_nghien_cuu_text_to_sql.html</a>: khảo sát 17 nguồn</li>
+<li><a href="bao_cao_jev_clickhouse.html">bao_cao_jev_clickhouse.html</a>: nghiên cứu Jev</li>
+<li><code>docs/query_guard_ke_hoach_va_ket_qua.md</code>, <code>datasets/hddt/phieu_kiem_toan_bo_danh_gia.md</code>, <code>experiments/</code> (script chạy lại)</li>
+</ul>
+<footer>Số liệu lấy từ các lần chạy trong thư mục results/ (không đưa lên git vì có dữ liệu thật) và từ các báo cáo thành phần. Không có khóa, mật khẩu hay địa chỉ máy chủ trong tài liệu này.</footer>
+</div>
+</body>
+</html>

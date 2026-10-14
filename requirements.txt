@@ -3,3 +3,4 @@ streamlit>=1.40
 pandas>=2.0
 sqlglot>=25
 clickhouse-connect>=0.8
+mcp>=1.9
