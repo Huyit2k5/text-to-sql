@@ -748,5 +748,24 @@ class TestErrorMemory(unittest.TestCase):
         self.assertTrue(CONFIGS["production_memory"].use_memory)
 
 
+class TestMaskValue(unittest.TestCase):
+    def test_dates_are_not_masked_as_phone_numbers(self):
+        from t2sql.safety import mask_value
+        for d in ("2025-01-01", "2025-12-31", "2025-03", "2025-03-01T00:00:00", "2025-03-01 00:00:00"):
+            self.assertEqual(mask_value(d), d, d)
+
+    def test_phone_and_email_still_masked(self):
+        from t2sql.safety import mask_value
+        self.assertEqual(mask_value("0901234567"), "090*****67")
+        self.assertEqual(mask_value("+84 901 234 567"), "+84**********67")
+        self.assertEqual(mask_value("nguyenvan@congty.vn"), "ng***@congty.vn")
+
+    def test_other_values_unchanged(self):
+        from t2sql.safety import mask_value
+        self.assertEqual(mask_value("Công ty ABC"), "Công ty ABC")
+        self.assertEqual(mask_value(12345), 12345)
+        self.assertIsNone(mask_value(None))
+
+
 if __name__ == "__main__":
     unittest.main()

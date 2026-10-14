@@ -62,13 +62,16 @@ def static_check(sql: str) -> str:
 
 _EMAIL = re.compile(r"^([^@\s]{1,2})[^@\s]*(@.+)$")
 _PHONE = re.compile(r"^\+?\d[\d\s.-]{7,}\d$")
+# Ngày dạng 2025-01-01 (Date của ClickHouse sau khi chuẩn hóa thành chuỗi) khớp mẫu số điện thoại nên phải loại ra trước,
+# nếu không mọi cột ngày của vai trò analyst đều bị che thành "202*****01".
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def mask_value(v):
     if isinstance(v, str):
         if _EMAIL.match(v):
             return _EMAIL.sub(r"\1***\2", v)
-        if _PHONE.match(v):
+        if _PHONE.match(v) and not _DATE_ONLY.match(v):
             return v[:3] + "*" * (len(v) - 5) + v[-2:]
     return v
 
