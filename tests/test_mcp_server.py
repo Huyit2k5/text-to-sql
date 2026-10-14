@@ -313,6 +313,44 @@ class TestService(unittest.TestCase):
             self.assertTrue(lim.acquire("b")[0])                 # xong thì nhả
         self.run_async(scenario())
 
+    def test_retry_of_same_question_joins_running_work_and_runs_once(self):
+        """WeKnora tự thử lại khi quá hạn: không chạy lại trên ClickHouse, không tính vào giới hạn."""
+        pipe = FakePipe(delay=0.4)
+        lim = mcp_auth.Limiter(2, 1, 100)
+        svc = self.service(pipe, limiter=lim, deadline_s=0.1)
+
+        async def scenario():
+            with self.assertRaises(mcp_server.ToolFailure):
+                await svc.ask("a", "câu chậm")                   # quá hạn, việc vẫn chạy
+            svc.deadline_s = 2
+            return await svc.ask("a", "câu chậm")                # gửi lại: nối vào việc đang chạy
+        self.assertIn("[status: answer]", self.run_async(scenario()))
+        self.assertEqual(len(pipe.calls), 1)
+
+    def test_recent_result_is_reused_but_other_users_and_questions_are_not(self):
+        pipe = FakePipe()
+        svc = self.service(pipe)
+
+        async def scenario():
+            await svc.ask("a", "câu 1")
+            await svc.ask("a", "câu 1")                          # trùng: dùng lại
+            await svc.ask("b", "câu 1")                          # người khác: chạy riêng
+            await svc.ask("a", "câu 1", ["trước đó"])            # lịch sử khác: chạy riêng
+            await svc.ask("a", "câu 2")
+        self.run_async(scenario())
+        self.assertEqual(len(pipe.calls), 4)
+
+    def test_failed_work_is_not_cached(self):
+        pipe = FakePipe(answer=Answer(question="q", kind="error", message="boom"))
+        svc = self.service(pipe)
+
+        async def scenario():
+            for _ in range(2):
+                with self.assertRaises(mcp_server.ToolFailure):
+                    await svc.ask("a", "câu")
+        self.run_async(scenario())
+        self.assertEqual(len(pipe.calls), 2)
+
     def test_slot_released_after_failure(self):
         pipe = FakePipe(answer=Answer(question="q", kind="error", message="boom"))
         lim = mcp_auth.Limiter(1, 1, 100)

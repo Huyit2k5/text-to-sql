@@ -144,7 +144,9 @@ class AskService:
             max_global=int(os.environ.get("T2SQL_MCP_MAX_CONCURRENT") or 2),
             max_per_user=int(os.environ.get("T2SQL_MCP_MAX_PER_USER") or 1),
             per_minute=int(os.environ.get("T2SQL_MCP_RATE_PER_MIN") or 20))
-        self.deadline_s = float(deadline_s if deadline_s is not None else (os.environ.get("T2SQL_MCP_DEADLINE_S") or 50))
+        self.deadline_s = float(deadline_s if deadline_s is not None else (os.environ.get("T2SQL_MCP_DEADLINE_S") or 25))
+        self.dedupe_ttl_s = float(os.environ.get("T2SQL_MCP_DEDUPE_TTL_S") or 120)
+        self._inflight, self._recent = {}, {}
         self.role = role
 
     @staticmethod
@@ -180,14 +182,33 @@ class AskService:
                                   latency_ms=round((time.perf_counter() - t0) * 1000, 1),
                                   rows=len(ans.result.rows) if ans.result and ans.result.ok else None)
 
+    def _remember(self, key, fut):
+        """Khi việc xong: bỏ khỏi danh sách đang chạy; nếu thành công thì giữ kết quả ít phút cho lần gửi lại."""
+        self._inflight.pop(key, None)
+        if not fut.cancelled() and fut.exception() is None:
+            now = time.monotonic()
+            self._recent[key] = (now, fut.result())
+            for k in [k for k, (t, _) in self._recent.items() if now - t > self.dedupe_ttl_s]:
+                self._recent.pop(k, None)
+
     async def ask(self, user: str, question, history=None, detail: str = "concise") -> str:
         q, hist, detail = self.check_inputs(question, history, detail)
-        ok, why, wait = self.limiter.acquire(user)
-        if not ok:
-            raise ToolFailure(f"{why} Hãy thử lại sau khoảng {wait} giây.")
-        fut = asyncio.ensure_future(asyncio.to_thread(self._work, user, q, hist, detail))
-        # Giữ chỗ đến khi luồng làm việc kết thúc thật (kể cả khi đã quá hạn), để không dồn việc lên server đang kẹt.
-        fut.add_done_callback(lambda _f: self.limiter.release(user))
+        # Client như WeKnora tự thử lại khi quá hạn: cùng người + cùng câu hỏi thì dùng lại việc đang chạy
+        # hoặc kết quả vừa xong, không chạy lại trên ClickHouse và không tính vào giới hạn.
+        key = (user, q, tuple(h["question"] for h in hist), detail)
+        hit = self._recent.get(key)
+        if hit and time.monotonic() - hit[0] <= self.dedupe_ttl_s:
+            return hit[1]
+        fut = self._inflight.get(key)
+        if fut is None:
+            ok, why, wait = self.limiter.acquire(user)
+            if not ok:
+                raise ToolFailure(f"{why} Hãy thử lại sau khoảng {wait} giây.")
+            fut = asyncio.ensure_future(asyncio.to_thread(self._work, user, q, hist, detail))
+            self._inflight[key] = fut
+            # Giữ chỗ đến khi luồng làm việc kết thúc thật (kể cả khi đã quá hạn), để không dồn việc lên server đang kẹt.
+            fut.add_done_callback(lambda _f: self.limiter.release(user))
+            fut.add_done_callback(lambda f, k=key: self._remember(k, f))
         try:
             return await asyncio.wait_for(asyncio.shield(fut), timeout=self.deadline_s)
         except asyncio.TimeoutError:
