@@ -533,6 +533,25 @@ Các hướng sau **không** nằm trong phương án hiện tại; chỉ làm k
 - **`elicitation`** (hỏi trực tiếp người dùng trong Claude Code), **tài nguyên** (tài liệu schema), **prompt mẫu**.
 - **Dùng danh tính Tailscale** (`Tailscale-User-Login`) làm lớp xác thực chính, và **OAuth** qua hệ thống danh tính công ty.
 
+## 14b. Kết quả giai đoạn 1 (chạy qua MCP thật)
+
+Chạy bằng `experiments/mcp/run_via_mcp.py`: client MCP thật, xác thực `X-API-Key`, chấm lại bằng cách chạy SQL được trả về. Cấu hình `production`, vai trò `analyst`, `detail=concise`. Đây vẫn là cận trên (bộ câu hỏi do nhóm tự viết).
+
+| Bộ | Đúng | Ghi chú |
+|---|---|---|
+| dev (66 câu, gồm 3 câu phải từ chối) | 64/66 | sai: h24 (không ổn định), h26 (sai, và quá 25 giây) |
+| held-out (30 câu) | 30/30 | |
+| mơ hồ (50 câu) | 45/50 | trước đó gọi trực tiếp 46/50; sai: c04 (bị từ chối thay vì hỏi lại), k11, k12, k15, k17 (trả lời thay vì hỏi lại) |
+| nối tiếp, `history` chỉ có câu hỏi (6 câu mới) | 6/6 | |
+
+So với gọi trực tiếp pipeline: không giảm đáng kể (khác biệt trong phạm vi dao động giữa các lần chạy).
+
+**Độ dài đầu ra (ước lượng 1 token ≈ 2,5 ký tự, chưa đo bằng tokenizer thật):** trung vị 105–190 token, lớn nhất khoảng 470 token, rất xa mức cảnh báo 10.000 token của Claude Code.
+
+**Độ trễ phía client:** trung vị 1,7–3,2 giây, p90 4,9–6,4 giây. Bốn câu vượt hạn chót 25 giây: h26 (45,5 giây), o28 (38,3), n09 (29,8), k14 (77,2, phải gửi lại 3 lần). Với client timeout 30 giây như WeKnora mặc định, những câu này lỗi nếu client không tự thử lại; khi thử lại, máy chủ nối vào việc đang chạy nên không chạy trùng. Nên đặt timeout WeKnora cao hơn (60 giây) nếu có thể.
+
+**Chưa làm:** thử với WeKnora thật, đo token bằng tokenizer thật, đo dưới tải nhiều người dùng, giai đoạn 2 (preflight).
+
 ## 15. Nguồn
 - Đặc tả MCP, mục Tools: https://modelcontextprotocol.io/specification/latest/server/tools
 - Đặc tả MCP, mục Authorization: https://modelcontextprotocol.io/specification/latest/basic/authorization
