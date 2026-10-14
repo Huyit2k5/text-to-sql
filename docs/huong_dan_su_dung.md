@@ -152,7 +152,7 @@ Phản hồi được lưu cùng câu hỏi và câu SQL để nhóm kỹ thuậ
 
 | Hiện tượng | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
-| Không mở được trang | Máy chủ chạy ứng dụng đang tắt, hoặc địa chỉ đã đổi (địa chỉ tạm thường đổi khi khởi động lại) | Hỏi người quản trị địa chỉ mới |
+| Không mở được trang | Máy chủ chạy ứng dụng đang tắt, hoặc địa chỉ đã đổi (một số loại địa chỉ tạm đổi khi người quản trị bật lại đường truyền) | Hỏi người quản trị địa chỉ mới |
 | Hỏi mật khẩu khi mở trang | Trang có lớp bảo vệ | Nhập thông tin người quản trị đã gửi |
 | Trả lời rất chậm hoặc "đang suy nghĩ" lâu | Model đang bận (nhiều người hỏi cùng lúc) | Chờ thêm hoặc hỏi lại sau vài phút. Mỗi câu thường 4 đến 8 giây |
 | Thông báo "Không kết nối được ClickHouse" | Máy chủ chưa kết nối được tới database | Báo người quản trị |
