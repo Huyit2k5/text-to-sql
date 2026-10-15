@@ -551,7 +551,17 @@ So với gọi trực tiếp pipeline: không giảm đáng kể (khác biệt t
 
 **Độ trễ phía client:** trung vị 1,7–3,2 giây, p90 4,9–6,4 giây. Bốn câu vượt hạn chót 25 giây: h26 (45,5 giây), o28 (38,3), n09 (29,8), k14 (77,2, phải gửi lại 3 lần). Với client timeout 30 giây như WeKnora mặc định, những câu này lỗi nếu client không tự thử lại; khi thử lại, máy chủ nối vào việc đang chạy nên không chạy trùng. Nên đặt timeout WeKnora cao hơn (60 giây) nếu có thể.
 
-**Chưa làm:** thử với WeKnora thật, đo token bằng tokenizer thật, đo dưới tải nhiều người dùng, giai đoạn 2 (preflight).
+**Đếm token (`experiments/mcp/count_tokens.py`, tiktoken cl100k_base làm xấp xỉ vì máy chủ model không mở `/tokenize`):** trên 152 đầu ra đã lưu, trung vị 119–208, p90 221–269, lớn nhất **585 token**; mô tả công cụ 511 token. Trường hợp xấu nhất theo ngân sách ký tự: `concise` (6.000 ký tự) khoảng 2.800 token, `full` (16.000 ký tự) khoảng 7.600 token, cả hai dưới 10.000. Tiêu chí 4 đạt (xấp xỉ, không phải tokenizer của model).
+
+**Bộ an toàn đầu-cuối (`experiments/mcp/safety_via_mcp.py`, 39 câu):** 35 câu rủi ro đều đạt (13/13 ghi, sửa, xóa và DDL; 6/6 bảng hệ thống và hàm bảng; 10/10 cột cá nhân; 6/6 chèn lệnh và đòi bí mật), 4/4 câu hợp lệ không bị từ chối nhầm (gồm "đã xóa", "không bị xóa", "được cập nhật"). Một câu đòi nội dung cột `Note` (bị chặn) được trả lời bằng cột khác `ProcessInvNote`, không chạm cột bị chặn. Không có email, số điện thoại hay giá trị bí mật từ `.env` trong kết quả. Tiêu chí 5 đạt.
+
+**Thử thật với WeKnora của leader (qua Funnel, HTTP Streamable, `X-API-Key`):** WeKnora gọi `ask_data` thành công; đọc log hơn 50 lệnh gọi:
+- Model của WeKnora tự diễn đạt lại câu nối tiếp thành câu đầy đủ nên **`history` chưa từng được dùng**.
+- Câu mơ hồ ("công ty nào lớn nhất?"): máy chủ không trả `clarify`; model tự gọi nhiều lần theo từng tiêu chí hoặc chọn một cách hiểu. Sau khi sửa mô tả công cụ, hành vi tốt hơn (không đổi dự báo thành số liệu quá khứ; gọi lại `detail=full` thay vì tách chuỗi bằng `substring`).
+- Hai lỗi thật tìm ra từ log và đã sửa: ngày "hôm nay" từng gán cứng 30/06/2025 (nay máy chủ dùng ngày thật, `T2SQL_TODAY`), và "N tháng gần nhất" tính theo tháng dương lịch nguyên; bộ lọc ý định ghi từng từ chối nhầm câu hỏi chứa "không bị xóa".
+- Ô dài bị cắt giờ ghi rõ phần còn lại (`…(+N ký tự)`), `detail=full` cho ô dài 300 ký tự.
+
+**Chưa làm:** đo dưới tải nhiều người dùng cùng lúc, giai đoạn 2 (preflight), kiểm tra thiết bị ngoài tailnet không tới được (chỉ có nghĩa khi dùng Serve, không dùng Funnel).
 
 ## 15. Nguồn
 - Đặc tả MCP, mục Tools: https://modelcontextprotocol.io/specification/latest/server/tools
