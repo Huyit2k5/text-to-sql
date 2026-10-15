@@ -1,5 +1,5 @@
 """Các prompt. Schema nằm trong system prompt (ổn định, dễ cache); câu hỏi nằm trong user message."""
-from . import TODAY
+from . import today
 from .dialect import HINTS, NAMES
 
 SQL_SYSTEM = """Bạn chuyển câu hỏi tiếng Việt thành đúng MỘT câu truy vấn {dialect} chỉ đọc (SELECT hoặc WITH ... SELECT).
@@ -104,12 +104,12 @@ Nếu câu SQL có vẻ không khớp với câu hỏi, nói rõ điểm lệch.
 
 def sql_system(schema_text: str, allow_clarify: bool, dialect: str = "clickhouse", strong: bool = False) -> str:
     rule = (CLARIFY_RULE_STRONG if strong else CLARIFY_RULE) if allow_clarify else ""
-    return SQL_SYSTEM.format(schema=schema_text, today=TODAY, dialect=NAMES.get(dialect, dialect),
-                             dialect_hint=HINTS.get(dialect, ""), clarify_rule=rule)
+    return SQL_SYSTEM.format(schema=schema_text, today=today(), dialect=NAMES.get(dialect, dialect),
+                             dialect_hint=HINTS.get(dialect, "").replace("@TODAY@", today()), clarify_rule=rule)
 
 
 def classify_system(schema_text: str) -> str:
-    return CLASSIFY_SYSTEM.format(schema=schema_text, today=TODAY)
+    return CLASSIFY_SYSTEM.format(schema=schema_text, today=today())
 
 
 def fix_error(error: str, dialect: str = "clickhouse") -> str:

@@ -222,6 +222,8 @@ def default_pipeline_provider():
     def get():
         with lock:
             if "pipe" not in state:
+                if not os.environ.get("T2SQL_TODAY"):
+                    os.environ["T2SQL_TODAY"] = "real"     # phục vụ người dùng thật: "tháng này" là tháng của ngày thật
                 from .llm import default_llm
                 from .logstore import QueryLogger
                 from .pipeline import TextToSQL
@@ -267,11 +269,24 @@ class TokenGate:
     def __init__(self, app):
         self.app = app
 
+    @staticmethod
+    def log(scope, hmap, entry, tok):
+        """Một dòng mỗi yêu cầu để chẩn đoán kết nối (không bao giờ ghi giá trị header/token)."""
+        kind = ("bearer" if hmap.get("authorization", "")[:7].lower() == "bearer " else
+                "x-api-key" if hmap.get("x-api-key") else
+                "basic" if hmap.get("authorization", "")[:6].lower() == "basic " else "none")
+        who = entry["label"] if entry else ("token-sai-hoac-het-han" if tok else "khong-co-token")
+        client = (scope.get("client") or ["?"])[0]
+        print(f"{time.strftime('%H:%M:%S')} {scope.get('method')} {scope.get('path')} auth={kind} -> {who} "
+              f"host={hmap.get('host', '?')} client={client} ua={hmap.get('user-agent', '?')[:60]}", file=sys.stderr, flush=True)
+
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             headers = [(k, v) for k, v in scope["headers"] if k.lower() != USER_HEADER.encode()]
             hmap = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in headers}
-            entry = mcp_auth.verify_token(mcp_auth.token_from_headers(hmap))
+            tok = mcp_auth.token_from_headers(hmap)
+            entry = mcp_auth.verify_token(tok)
+            self.log(scope, hmap, entry, tok)
             if not entry:
                 body = b'{"error":"unauthorized"}'
                 await send({"type": "http.response.start", "status": 401,
