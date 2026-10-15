@@ -126,6 +126,42 @@ class TestRetrievalAndViz(unittest.TestCase):
         self.assertEqual(choose_view(["a"], [])["kind"], "empty")
 
 
+class TestToday(unittest.TestCase):
+    """Ngày 'hôm nay' trong prompt: cố định cho đánh giá, ngày thật cho máy chủ MCP."""
+
+    def setUp(self):
+        self._old = os.environ.pop("T2SQL_TODAY", None)
+
+    def tearDown(self):
+        os.environ.pop("T2SQL_TODAY", None)
+        if self._old is not None:
+            os.environ["T2SQL_TODAY"] = self._old
+
+    def test_default_is_fixed_for_reproducible_evaluation(self):
+        from t2sql import TODAY, today
+        self.assertEqual(today(), TODAY)
+        os.environ["T2SQL_TODAY"] = ""
+        self.assertEqual(today(), TODAY)                # biến rỗng (env_file của Docker) vẫn là ngày cố định
+
+    def test_real_and_pinned(self):
+        import datetime
+        from t2sql import today
+        os.environ["T2SQL_TODAY"] = "real"
+        self.assertEqual(today(), datetime.date.today().isoformat())
+        os.environ["T2SQL_TODAY"] = "2026-01-15"
+        self.assertEqual(today(), "2026-01-15")
+
+    def test_prompts_use_current_value_everywhere(self):
+        from t2sql import prompts
+        os.environ["T2SQL_TODAY"] = "2026-10-15"
+        for text in (prompts.sql_system("schema", True), prompts.classify_system("schema")):
+            self.assertIn("2026-10-15", text)
+            self.assertNotIn("2025-06-30", text)
+            self.assertNotIn("@TODAY@", text)
+        del os.environ["T2SQL_TODAY"]
+        self.assertIn("2025-06-30", prompts.sql_system("schema", True))
+
+
 class TestConfigEnv(unittest.TestCase):
     ENV_KEYS = ["T2SQL_TEST_A", "T2SQL_TEST_B", "T2SQL_TEST_C", "T2SQL_TEST_EMPTY",
                 "T2SQL_MODEL", "T2SQL_EFFORT", "T2SQL_FALLBACKS", "T2SQL_MAX_TOKENS", "ANTHROPIC_API_KEY"]
@@ -746,6 +782,23 @@ class TestErrorMemory(unittest.TestCase):
     def test_memory_is_off_by_default_and_on_in_the_experiment_config(self):
         self.assertFalse(CONFIGS["production"].use_memory)
         self.assertTrue(CONFIGS["production_memory"].use_memory)
+
+
+class TestWriteIntent(unittest.TestCase):
+    def test_real_write_requests_are_still_refused(self):
+        from t2sql.safety import is_write_request
+        for q in ("Xóa toàn bộ hóa đơn của tháng 5.", "xóa hóa đơn số 12", "Cập nhật tổng tiền của hóa đơn số 1 thành 0.",
+                  "Hãy sửa tên công ty ABC", "Thêm mới một hóa đơn", "Làm ơn xoá hết dữ liệu", "DELETE FROM VATInvoice",
+                  "Cho tôi xem hóa đơn rồi xóa chúng đi"):
+            self.assertTrue(is_write_request(q), q)
+
+    def test_questions_about_deleted_or_updated_data_are_not_refused(self):
+        from t2sql.safety import is_write_request
+        for q in ("Tổng giá trị hóa đơn có No > 0 và không bị xóa theo từng tháng",
+                  "Có bao nhiêu hóa đơn đã xóa trong tháng 5?", "Số hóa đơn chưa xóa của công ty ABC",
+                  "Hóa đơn bị xóa nhiều nhất thuộc công ty nào?", "Những hóa đơn được cập nhật gần đây",
+                  "Hóa đơn đang cập nhật trạng thái là bao nhiêu"):
+            self.assertFalse(is_write_request(q), q)
 
 
 class TestMaskValue(unittest.TestCase):

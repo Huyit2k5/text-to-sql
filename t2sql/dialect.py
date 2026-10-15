@@ -3,8 +3,8 @@
 HINTS = {
     "clickhouse": """Cú pháp ClickHouse:
 - Cột ngày có kiểu Date. Lấy năm/tháng/quý: toYear(col), toMonth(col), toQuarter(col), toStartOfMonth(col),
-  formatDateTime(col, '%Y-%m'). Hôm nay là toDate('2025-06-30') (KHÔNG dùng today()).
-- Khoảng ngày: toDate('2025-06-30') - INTERVAL 1 MONTH, subtractDays(toDate('2025-06-30'), 7);
+  formatDateTime(col, '%Y-%m'). Hôm nay là toDate('@TODAY@') (KHÔNG dùng today()).
+- Khoảng ngày: toDate('@TODAY@') - INTERVAL 1 MONTH, subtractDays(toDate('@TODAY@'), 7);
   số ngày giữa hai ngày: dateDiff('day', a, b) (= b - a).
 - Phép chia `/` luôn ra số thực; chia lấy phần nguyên dùng intDiv(a, b).
 - Top N trong mỗi nhóm: ORDER BY nhom, gia_tri DESC LIMIT N BY nhom (hoặc hàm cửa sổ RANK() OVER (PARTITION BY ...)).

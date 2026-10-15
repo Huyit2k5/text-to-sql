@@ -76,5 +76,18 @@ def mask_value(v):
     return v
 
 
+# Từ đứng ngay trước động từ cho biết đây là câu hỏi về dữ liệu ("hóa đơn không bị xóa", "đã xóa"), không phải yêu cầu xóa.
+_NOT_A_COMMAND_BEFORE = {"không", "chưa", "chẳng", "đã", "bị", "được", "đang", "vừa", "mới"}
+_WORD_BEFORE = re.compile(r"(\w+)\W*$", re.U)
+
+
 def is_write_request(question: str) -> bool:
-    return bool(WRITE_INTENT.search(question or ""))
+    """Chặn nhanh yêu cầu ghi/xóa/sửa dữ liệu. Đây chỉ là lối tắt cho trải nghiệm: chốt chặn thật là kiểm tra SQL
+    chỉ đọc và quyền của vai trò. Câu như "hóa đơn không bị xóa" hay "bao nhiêu hóa đơn đã xóa" là câu hỏi về dữ liệu."""
+    q = question or ""
+    for m in WRITE_INTENT.finditer(q):
+        before = _WORD_BEFORE.search(q[: m.start()].lower())
+        if before and before.group(1) in _NOT_A_COMMAND_BEFORE:
+            continue
+        return True
+    return False

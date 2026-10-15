@@ -5,7 +5,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 
-from . import ROOT, TODAY, datasets, prompts
+from . import ROOT, datasets, prompts, today
 from .db import Backend, ExecResult, make_backend
 from .checks import Issue, check_result, describe
 from .dialect import example_sql
@@ -341,7 +341,7 @@ class TextToSQL:
 
         q = question
         if cfg.rewrite_followups and history:
-            q = self.llm.complete(prompts.REWRITE_SYSTEM.format(today=TODAY),
+            q = self.llm.complete(prompts.REWRITE_SYSTEM.format(today=today()),
                                   prompts.rewrite_messages(history, question), max_tokens=2000).strip() or question
         ans.standalone_question = q
 

@@ -4,6 +4,10 @@
 #   docker compose exec app python evaluate.py --configs all      # chấm điểm trên database mặc định
 #   docker compose down                   # dừng (giữ dữ liệu)
 #
+# Máy chủ MCP (công cụ ask_data cho WeKnora...): chỉ mở ở 127.0.0.1, đưa ra tailnet bằng `tailscale serve --bg 8780`.
+#   docker compose up -d --build mcp
+#   docker compose exec mcp python -m t2sql.mcp_server token-create --label <ten>   # token chỉ hiện một lần
+#
 # Cấu hình lấy từ file .env (xem .env.example): LLM_*, T2SQL_*.
 # App lấy URL từ T2SQL_DATABASE_URL_DOCKER, nếu trống thì dùng T2SQL_DATABASE_URL_CONGTY (xem .env.example).
 
@@ -23,3 +27,22 @@ services:
     volumes:
       - ./logs:/app/logs          # log truy vấn + phản hồi người dùng
       - ./results:/app/results    # kết quả evaluate.py
+
+  mcp:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      T2SQL_DATABASE_URL: ${T2SQL_DATABASE_URL_DOCKER:-${T2SQL_DATABASE_URL_CONGTY:?Đặt T2SQL_DATABASE_URL_CONGTY (hoặc T2SQL_DATABASE_URL_DOCKER) trong .env}}
+    command: ["python", "-m", "t2sql.mcp_server", "serve", "--host", "0.0.0.0", "--port", "8780"]
+    ports:
+      - "127.0.0.1:${T2SQL_MCP_PORT:-8780}:8780"   # chỉ localhost; Tailscale Serve làm đường vào duy nhất
+    volumes:
+      - ./logs:/app/logs
+      - ./.cache:/app/.cache        # kho token (chỉ lưu bản băm)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8780), 3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s

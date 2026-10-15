@@ -13,7 +13,7 @@ COPY t2sql ./t2sql
 COPY datasets ./datasets
 COPY app.py cli.py evaluate.py profile_clickhouse.py ./
 
-RUN useradd --create-home --uid 1000 app && mkdir -p logs results && chown -R app:app /app
+RUN useradd --create-home --uid 1000 app && mkdir -p logs results .cache && chown -R app:app /app
 USER app
 
 EXPOSE 8501

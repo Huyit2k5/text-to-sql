@@ -1,5 +1,5 @@
 """Các prompt. Schema nằm trong system prompt (ổn định, dễ cache); câu hỏi nằm trong user message."""
-from . import TODAY
+from . import today
 from .dialect import HINTS, NAMES
 
 SQL_SYSTEM = """Bạn chuyển câu hỏi tiếng Việt thành đúng MỘT câu truy vấn {dialect} chỉ đọc (SELECT hoặc WITH ... SELECT).
@@ -10,6 +10,7 @@ Cách trả lời:
 - Nếu dữ liệu không thể trả lời câu hỏi (câu hỏi ngoài phạm vi, hoặc yêu cầu sửa/xóa/thêm dữ liệu), chỉ trả về một dòng: CANNOT_ANSWER: <lý do ngắn bằng tiếng Việt>{clarify_rule}
 - Đặt tên cột kết quả dễ hiểu bằng alias. Chỉ ORDER BY khi câu hỏi cần thứ tự hoặc top-N.
 - Hôm nay là {today}. "Tháng này", "tháng trước", "năm nay" tính theo ngày này.
+- "N tháng gần nhất" (hoặc "N tháng qua") tính theo THÁNG DƯƠNG LỊCH nguyên: gồm tháng hiện tại và N-1 tháng trước đó, nên cận dưới là ngày đầu tháng (toStartOfMonth(toDate('{today}')) - INTERVAL N-1 MONTH), cận trên là hết ngày hôm nay; nhóm theo tháng thì ra đúng N dòng. Không lùi theo số ngày (không dùng hôm nay - N tháng).
 
 {dialect_hint}
 
@@ -104,12 +105,12 @@ Nếu câu SQL có vẻ không khớp với câu hỏi, nói rõ điểm lệch.
 
 def sql_system(schema_text: str, allow_clarify: bool, dialect: str = "clickhouse", strong: bool = False) -> str:
     rule = (CLARIFY_RULE_STRONG if strong else CLARIFY_RULE) if allow_clarify else ""
-    return SQL_SYSTEM.format(schema=schema_text, today=TODAY, dialect=NAMES.get(dialect, dialect),
-                             dialect_hint=HINTS.get(dialect, ""), clarify_rule=rule)
+    return SQL_SYSTEM.format(schema=schema_text, today=today(), dialect=NAMES.get(dialect, dialect),
+                             dialect_hint=HINTS.get(dialect, "").replace("@TODAY@", today()), clarify_rule=rule)
 
 
 def classify_system(schema_text: str) -> str:
-    return CLASSIFY_SYSTEM.format(schema=schema_text, today=TODAY)
+    return CLASSIFY_SYSTEM.format(schema=schema_text, today=today())
 
 
 def fix_error(error: str, dialect: str = "clickhouse") -> str:
