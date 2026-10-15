@@ -569,7 +569,14 @@ So với gọi trực tiếp pipeline: không giảm đáng kể (khác biệt t
 
 **Kiểm tải máy chủ MCP (`experiments/heavy/mcp_load.py`, pipeline giả chậm, HTTP thật):** 6 người cùng lúc thì 2 chạy, 4 bị từ chối sau 0,08 giây (không xếp hàng); một người gửi 3 câu khác nhau thì chỉ 1 chạy; 25 câu liên tiếp thì 20 chạy và 5 bị chặn theo giới hạn mỗi phút; câu quá hạn rồi gửi lại thì pipeline chỉ chạy 1 lần; 5 lần gửi cùng một câu đồng thời chỉ chạy 1 lần; lỗi giữa chừng thì chỗ được nhả; thu hồi token có hiệu lực ngay.
 
-**Chưa làm:** chạy thật truy vấn nặng trên máy chủ dùng chung (cần được phép), giai đoạn 2 (preflight), kiểm tra thiết bị ngoài tailnet không tới được (chỉ có nghĩa khi dùng Serve, không dùng Funnel).
+**Chạy thật truy vấn nặng (`experiments/heavy/run_heavy.py`, có sự đồng ý, từng câu một, kiểm tra tải trước, dừng ngay khi có sự cố; server lúc đó rảnh):**
+- 7 câu trên một bảng, toàn thời gian (đếm, tổng, `GROUP BY` tên công ty, `uniqExact`, `GROUP BY` công ty theo tháng, mặt hàng bán chạy, `ORDER BY` toàn bảng): **1,6 đến 3,0 giây**, đọc 15 đến 17 triệu dòng, 230 đến 720 MiB, bộ nhớ **73 đến 141 MiB**. Nhẹ.
+- **Nối hóa đơn với dòng hàng, không lọc ngày: nguy hiểm.** Đọc 11,6 triệu dòng, dùng **1,66 GiB** bộ nhớ, và chỉ dừng khi server tự ngắt sau **158 giây** (mã 159, vượt thời gian; giới hạn của tài khoản khoảng 150 giây, không phải 30 giây như cấu hình phía ứng dụng).
+- Phía ứng dụng chỉ chờ 45 giây rồi báo `db_unavailable` ("không kết nối được"), sai bản chất (đó là quá thời gian), và **truy vấn vẫn chạy thêm khoảng 2 phút trên server**. Ở chế độ tài khoản dùng chung ứng dụng không gửi được `max_execution_time`, nên giới hạn thật chỉ do profile của tài khoản. Client tự thử lại (WeKnora thử lại 3 lần, agent gọi lặp) có thể nhân lên thành nhiều truy vấn nặng đồng thời.
+- Tôi không hủy được truy vấn từ phía mình (không có quyền `KILL QUERY`, và hệ thống chặn việc đó trên server dùng chung); truy vấn tự kết thúc bằng giới hạn của server. Câu hàm cửa sổ (`h12`) không chạy vì đã dừng theo quy tắc an toàn.
+- Hệ quả: chốt chặn đúng là **giới hạn phía server** (profile của tài khoản: `max_execution_time` khoảng 30 giây và `max_memory_usage`) do DBA đặt, kèm một luật cảnh báo cho phép nối không lọc ngày ở cả hai bảng; trần cứng theo số dòng không có tác dụng ở quy mô dữ liệu này.
+
+**Chưa làm:** giai đoạn 2 (preflight), kiểm tra thiết bị ngoài tailnet không tới được (chỉ có nghĩa khi dùng Serve, không dùng Funnel).
 
 ## 15. Nguồn
 - Đặc tả MCP, mục Tools: https://modelcontextprotocol.io/specification/latest/server/tools
