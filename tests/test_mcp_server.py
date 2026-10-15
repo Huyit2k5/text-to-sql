@@ -179,6 +179,14 @@ class TestLimiter(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ dựng văn bản
+class TestToolDescription(unittest.TestCase):
+    def test_description_guides_clarify_cannot_followup_and_stays_short(self):
+        d = mcp_server.DESCRIPTION
+        for key in ("HỎI LẠI", "[status: clarify]", "[status: cannot]", "history", "detail=full", "DỮ LIỆU"):
+            self.assertIn(key, d)
+        self.assertLess(len(d), 2000)               # Claude Code cắt mô tả công cụ ở 2048 ký tự
+
+
 class TestRender(unittest.TestCase):
     def test_table_escapes_pipes_and_newlines_and_cuts_cells(self):
         text, cut, why = mcp_server.render_table(["ten", "n"], [("a|b\nc", 1.5), ("x" * 200, 2.0)], "concise")
