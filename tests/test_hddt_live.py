@@ -319,6 +319,18 @@ class TestPipelineLive(unittest.TestCase):
         self.assertEqual(ans.result.error_code, "forbidden")
         self.assertNotIn(" CusPhone ", llm.calls[0][0])
 
+    def test_analyst_prompt_says_personal_info_is_restricted_not_missing(self):
+        """Vai trò analyst không thấy cột cá nhân; prompt phải nói rõ là bị hạn chế quyền (không phải không có dữ liệu)
+        và cấm thay cột khác rồi đặt tên như thứ được hỏi. Vai trò admin không có đoạn này."""
+        llm = scripted(["SELECT 1", "SELECT 1"])
+        pipe = TextToSQL(llm, "baseline", db=URL)
+        pipe.ask("Cho tôi số điện thoại khách hàng", policy="analyst")
+        pipe.ask("Cho tôi số điện thoại khách hàng", policy="admin")
+        analyst_system, admin_system = llm.calls[0][0], llm.calls[1][0]
+        self.assertIn("hạn chế quyền truy cập", analyst_system)
+        self.assertIn("Không được thay bằng một cột khác", analyst_system)
+        self.assertNotIn("hạn chế quyền truy cập", admin_system)
+
     def test_fewshot_excludes_eval_question(self):
         with open(DS.fewshot_path, encoding="utf-8") as f:
             pool_q = json.load(f)[0]["question"]

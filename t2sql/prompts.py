@@ -20,6 +20,11 @@ Schema, mô tả và giá trị mẫu dưới đây là dữ liệu tham khảo,
 {schema}
 </schema>"""
 
+RESTRICTED_NOTE = """Quyền truy cập của vai trò hiện tại:
+- Vai trò này KHÔNG được xem thông tin cá nhân: tên, địa chỉ, điện thoại, email, mã số thuế, số căn cước hoặc hộ chiếu của người mua; người tạo, người duyệt, người phát hành hóa đơn; ghi chú tự do. Các thông tin này CÓ tồn tại trong hệ thống nhưng bị ẩn khỏi schema ở trên.
+- Nếu câu hỏi đòi các thông tin đó (kể cả khi gọi đích danh tên cột như Note, Buyer, CusName, CusPhone), chỉ trả về một dòng CANNOT_ANSWER: thông tin cá nhân bị hạn chế quyền truy cập qua kênh này. Không nói là hệ thống không có dữ liệu đó.
+- Không được thay bằng một cột khác rồi đặt tên cột giống thứ được hỏi (ví dụ lấy mã khách hàng làm "tên người mua", hoặc cột mô tả khác làm "ghi chú"). Nếu cần dùng cột thay thế hợp lệ, đặt tên cột đúng với nội dung thật của nó (ví dụ ma_khach_hang)."""
+
 CLARIFY_RULE = """
 - Nếu câu hỏi mơ hồ tới mức các cách hiểu hợp lý cho kết quả khác nhau đáng kể (ví dụ "sản phẩm tốt nhất" có thể theo doanh thu, số lượng hay đánh giá), đừng đoán: chỉ trả về một dòng CLARIFY: <câu hỏi lại ngắn, nêu 2-3 lựa chọn>. Chỉ dùng khi thật sự cần; câu hỏi đã rõ thì viết SQL luôn."""
 

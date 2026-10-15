@@ -374,6 +374,8 @@ class TextToSQL:
             hist = self.history.render(set(schema.tables), q, exclude_columns=denied, parts=cfg.history_parts)
             if hist:
                 schema_text += "\n\n" + hist
+        if policy.denied_columns:   # model không thấy cột bị chặn: nói rõ là bị hạn chế quyền, không phải không có dữ liệu
+            schema_text += "\n\n" + prompts.RESTRICTED_NOTE
         if cfg.classify_first:
             t_cls = time.perf_counter()
             raw = self.llm.complete(prompts.classify_system(schema_text), [{"role": "user", "content": q}],
