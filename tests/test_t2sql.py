@@ -784,6 +784,23 @@ class TestErrorMemory(unittest.TestCase):
         self.assertTrue(CONFIGS["production_memory"].use_memory)
 
 
+class TestWriteIntent(unittest.TestCase):
+    def test_real_write_requests_are_still_refused(self):
+        from t2sql.safety import is_write_request
+        for q in ("Xóa toàn bộ hóa đơn của tháng 5.", "xóa hóa đơn số 12", "Cập nhật tổng tiền của hóa đơn số 1 thành 0.",
+                  "Hãy sửa tên công ty ABC", "Thêm mới một hóa đơn", "Làm ơn xoá hết dữ liệu", "DELETE FROM VATInvoice",
+                  "Cho tôi xem hóa đơn rồi xóa chúng đi"):
+            self.assertTrue(is_write_request(q), q)
+
+    def test_questions_about_deleted_or_updated_data_are_not_refused(self):
+        from t2sql.safety import is_write_request
+        for q in ("Tổng giá trị hóa đơn có No > 0 và không bị xóa theo từng tháng",
+                  "Có bao nhiêu hóa đơn đã xóa trong tháng 5?", "Số hóa đơn chưa xóa của công ty ABC",
+                  "Hóa đơn bị xóa nhiều nhất thuộc công ty nào?", "Những hóa đơn được cập nhật gần đây",
+                  "Hóa đơn đang cập nhật trạng thái là bao nhiêu"):
+            self.assertFalse(is_write_request(q), q)
+
+
 class TestMaskValue(unittest.TestCase):
     def test_dates_are_not_masked_as_phone_numbers(self):
         from t2sql.safety import mask_value
