@@ -25,7 +25,7 @@ from . import mcp_auth
 from .charts import draft_note
 
 DETAIL = {"concise": dict(rows=20, cols=12, cell=60, chars=6000),
-          "full": dict(rows=100, cols=20, cell=120, chars=16000)}
+          "full": dict(rows=100, cols=20, cell=300, chars=16000)}
 MAX_QUESTION = 1000
 MAX_HISTORY = 4
 MAX_HISTORY_ITEM = 500
@@ -52,7 +52,7 @@ def _cell(v, width: int) -> str:
         s = str(v)
     s = " ".join(s.split())                      # bỏ xuống dòng và khoảng trắng thừa: tránh phá bảng Markdown
     s = s.replace("|", "\\|")
-    return s if len(s) <= width else s[: max(1, width - 1)] + "…"
+    return s if len(s) <= width else s[:width] + f"…(+{len(s) - width} ký tự)"      # nói rõ cắt bao nhiêu: model khỏi đoán mò
 
 
 def render_table(columns, rows, detail: str) -> tuple[str, bool, str]:
@@ -74,6 +74,8 @@ def render_table(columns, rows, detail: str) -> tuple[str, bool, str]:
         shown += 1
     if shown < len(rows):
         reasons.append(f"chỉ hiện {shown}/{len(rows)} dòng")
+    if any("…(+" in line for line in lines):
+        reasons.append("có ô dài bị cắt ngắn" + (", dùng detail=full để xem đủ" if detail != "full" else ""))
     return "\n".join(lines), bool(reasons), ", ".join(reasons)
 
 

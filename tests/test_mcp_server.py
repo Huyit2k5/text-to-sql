@@ -186,8 +186,12 @@ class TestRender(unittest.TestCase):
         self.assertIn("1.50", text)
         self.assertIn("| 2 |", text)                          # float nguyên in như số nguyên
         self.assertTrue(all(len(line) < 160 for line in text.splitlines()))
-        self.assertIn("…", text)
-        self.assertFalse(cut)
+        self.assertIn("…(+140 ký tự)", text)                    # nói rõ phần bị cắt
+        self.assertTrue(cut)
+        self.assertIn("detail=full", why)
+        full, cut_full, _ = mcp_server.render_table(["ten"], [("x" * 200,)], "full")
+        self.assertIn("x" * 200, full)                          # chế độ đầy đủ không cắt tên dài
+        self.assertFalse(cut_full)
 
     def test_row_and_column_caps(self):
         rows = [tuple(range(15)) for _ in range(50)]
