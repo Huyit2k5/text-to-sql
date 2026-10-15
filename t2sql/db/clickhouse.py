@@ -86,6 +86,9 @@ def ast_check(sql: str, policy: Policy, dialect: str = "clickhouse") -> set[str]
     return check_ast(sql, policy, dialect, CH_RULES)
 
 
+_READ_TIMEOUT_RE = re.compile(r"read timed out|read timeout|ReadTimeout", re.I)    # không gồm "connect timeout"
+
+
 def _error_parts(e: Exception) -> tuple[int | None, str]:
     text = str(e)
     code = _CODE_RE.search(text)
@@ -310,6 +313,11 @@ class ClickHouseBackend(Backend):
             code, msg = _error_parts(e)
             if self.restricted and code is None and re.search(r"timed? ?out", str(e), re.I):
                 return ExecResult(False, error=f"Truy vấn vượt quá {self.timeout_s:g}s và đã bị dừng.",
+                                  error_code="timeout", elapsed_ms=_ms(t0))
+            if code is None and _READ_TIMEOUT_RE.search(str(e)):
+                # Chờ kết quả quá lâu (không phải lỗi kết nối): ứng dụng ngừng chờ, nhưng server có thể còn chạy
+                # truy vấn thêm một lúc nếu tài khoản không có giới hạn thời gian phía server.
+                return ExecResult(False, error=f"Truy vấn quá lâu (chờ hơn {self.timeout_s:g}s) nên ứng dụng đã ngừng chờ.",
                                   error_code="timeout", elapsed_ms=_ms(t0))
             if isinstance(e, OperationalError) and code is None:
                 return ExecResult(False, error=f"Không kết nối được ClickHouse: {msg}",

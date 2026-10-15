@@ -801,6 +801,34 @@ class TestWriteIntent(unittest.TestCase):
             self.assertFalse(is_write_request(q), q)
 
 
+class TestClickHouseTimeoutMapping(unittest.TestCase):
+    """Quá thời gian chờ kết quả phải báo là `timeout` (hướng dẫn thu hẹp câu hỏi), không phải `db_unavailable`."""
+
+    def run_with(self, exc):
+        try:
+            from clickhouse_connect.driver.exceptions import OperationalError
+            from t2sql.db.clickhouse import ClickHouseBackend
+        except ImportError:
+            self.skipTest("chưa cài clickhouse_connect")
+        ex = ClickHouseBackend("clickhouse://u:p@localhost:8123/hddt?single_user=1", max_rows=10, timeout_s=30)
+
+        class Boom:
+            def query(self, *a, **k):
+                raise OperationalError(exc)
+        ex._clients[ex.username(POLICIES["admin"])] = Boom()
+        return ex.run("SELECT 1")
+
+    def test_read_timeout_is_timeout_not_unavailable(self):
+        r = self.run_with("Error HTTPConnectionPool(host='h', port=8123): Read timed out. (read timeout=45) executing HTTP request")
+        self.assertEqual(r.error_code, "timeout")
+        self.assertIn("quá lâu", r.error)
+
+    def test_connection_failures_stay_unavailable(self):
+        for text in ("Error HTTPConnectionPool(host='h', port=8123): Max retries exceeded: Connection refused",
+                     "Error HTTPConnectionPool(host='h', port=8123): Connect timeout (connect timeout=10)"):
+            self.assertEqual(self.run_with(text).error_code, "db_unavailable", text)
+
+
 class TestMaskValue(unittest.TestCase):
     def test_dates_are_not_masked_as_phone_numbers(self):
         from t2sql.safety import mask_value
