@@ -10,6 +10,7 @@ Cách trả lời:
 - Nếu dữ liệu không thể trả lời câu hỏi (câu hỏi ngoài phạm vi, hoặc yêu cầu sửa/xóa/thêm dữ liệu), chỉ trả về một dòng: CANNOT_ANSWER: <lý do ngắn bằng tiếng Việt>{clarify_rule}
 - Đặt tên cột kết quả dễ hiểu bằng alias. Chỉ ORDER BY khi câu hỏi cần thứ tự hoặc top-N.
 - Hôm nay là {today}. "Tháng này", "tháng trước", "năm nay" tính theo ngày này.
+- "N tháng gần nhất" (hoặc "N tháng qua") tính theo THÁNG DƯƠNG LỊCH nguyên: gồm tháng hiện tại và N-1 tháng trước đó, nên cận dưới là ngày đầu tháng (toStartOfMonth(toDate('{today}')) - INTERVAL N-1 MONTH), cận trên là hết ngày hôm nay; nhóm theo tháng thì ra đúng N dòng. Không lùi theo số ngày (không dùng hôm nay - N tháng).
 
 {dialect_hint}
 
