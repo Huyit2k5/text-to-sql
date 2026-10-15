@@ -9,7 +9,7 @@ Công cụ `ask_data` cho phép hỏi dữ liệu hóa đơn điện tử bằng
 3. Tạo token cho từng người (hiện một lần, hạn mặc định 30 ngày):
    `docker compose exec mcp python -m t2sql.mcp_server token-create --label ten.nguoi.dung`
    Xem: `token-list`. Thu hồi (có hiệu lực ngay): `token-revoke --label ten.nguoi.dung`.
-4. Đưa ra tailnet: `tailscale serve --bg 8780` (không dùng Funnel; cần bật HTTPS cho tailnet).
+4. Đưa ra ngoài: `tailscale serve --bg 8780` (chỉ trong tailnet) hoặc, khi WeKnora ở tailnet khác và chưa chia sẻ máy, `tailscale funnel --bg 8780` (công khai trên Internet, chỉ dùng khi đang thử và token hạn ngắn). Cần bật HTTPS cho tailnet. Xong việc thì `tailscale funnel --https=443 off`.
 5. Gửi token qua kênh riêng tư, không gửi chung với URL.
 
 ## 2. Người quản trị WeKnora
@@ -21,7 +21,7 @@ Thêm máy chủ MCP với các giá trị:
 | Transport | Streamable HTTP |
 | URL | `https://<tên-máy>.<tailnet>.ts.net/mcp` |
 | Xác thực | API key, header `X-API-Key` = token (hoặc `Authorization: Bearer <token>`; hoặc Basic: tên bất kỳ, mật khẩu = token) |
-| Timeout | 30 giây (máy chủ tự trả lời trước 25 giây) |
+| Timeout | 60 giây; Retry 3, Retry Delay 3 giây (đặt `T2SQL_MCP_DEADLINE_S=50` ở máy chủ để máy chủ trả lời trước khi WeKnora ngắt) |
 
 Basic auth (nếu cần): header `Authorization: Basic base64(tên:token)`, tên chỉ để dễ đọc, **mật khẩu phải là token**. Thứ tự ưu tiên nếu gửi nhiều kiểu: Bearer, `X-API-Key`, Basic. Không nên đặt token trong URL kiểu `https://tên:token@...` vì sẽ lộ trong lịch sử, log và ảnh chụp màn hình; hãy dùng trường header của WeKnora.
 
