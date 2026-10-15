@@ -561,7 +561,15 @@ So với gọi trực tiếp pipeline: không giảm đáng kể (khác biệt t
 - Hai lỗi thật tìm ra từ log và đã sửa: ngày "hôm nay" từng gán cứng 30/06/2025 (nay máy chủ dùng ngày thật, `T2SQL_TODAY`), và "N tháng gần nhất" tính theo tháng dương lịch nguyên; bộ lọc ý định ghi từng từ chối nhầm câu hỏi chứa "không bị xóa".
 - Ô dài bị cắt giờ ghi rõ phần còn lại (`…(+N ký tự)`), `detail=full` cho ô dài 300 ký tự.
 
-**Chưa làm:** đo dưới tải nhiều người dùng cùng lúc, giai đoạn 2 (preflight), kiểm tra thiết bị ngoài tailnet không tới được (chỉ có nghĩa khi dùng Serve, không dùng Funnel).
+**Truy vấn nặng, chỉ bằng kế hoạch (`experiments/heavy/estimate_only.py`, 16 câu SQL mẫu, `EXPLAIN ESTIMATE` và `EXPLAIN indexes = 1`, không đọc dữ liệu):**
+- Hai bảng lớn có khoảng 14,6 triệu dòng (`VATInvoice`) và 16,7 triệu dòng (`ProductInv`). Quét toàn bảng đọc tối đa các con số đó; nối hai bảng không lọc ngày đọc khoảng 31,3 triệu dòng.
+- **Không câu nào vượt 40 triệu dòng**, nên trần cứng 40 triệu đề xuất ở giai đoạn 2 sẽ không bao giờ kích hoạt trên dữ liệu hiện tại. Đo số dòng không phải chỉ số đúng để bảo vệ trong trường hợp này; rủi ro nằm ở bộ nhớ của phép nối, `GROUP BY` cột nhiều giá trị, `uniqExact` và hàm cửa sổ.
+- Ngưỡng mềm 5 triệu dòng bị vượt bởi mọi câu "toàn thời gian" và cả câu một năm (13,7 triệu, vì dữ liệu tập trung vào năm 2025), nên chặn mềm nhắc model viết gọn gần như mỗi câu như vậy. Câu một tháng chỉ đọc khoảng 98 nghìn dòng (cắt theo chỉ mục hiệu quả).
+- Nối hóa đơn với dòng hàng chỉ lọc ngày ở bảng hóa đơn vẫn đọc toàn bộ `ProductInv` (16,7 triệu dòng): cần lọc cả hai bên mới cắt được.
+
+**Kiểm tải máy chủ MCP (`experiments/heavy/mcp_load.py`, pipeline giả chậm, HTTP thật):** 6 người cùng lúc thì 2 chạy, 4 bị từ chối sau 0,08 giây (không xếp hàng); một người gửi 3 câu khác nhau thì chỉ 1 chạy; 25 câu liên tiếp thì 20 chạy và 5 bị chặn theo giới hạn mỗi phút; câu quá hạn rồi gửi lại thì pipeline chỉ chạy 1 lần; 5 lần gửi cùng một câu đồng thời chỉ chạy 1 lần; lỗi giữa chừng thì chỗ được nhả; thu hồi token có hiệu lực ngay.
+
+**Chưa làm:** chạy thật truy vấn nặng trên máy chủ dùng chung (cần được phép), giai đoạn 2 (preflight), kiểm tra thiết bị ngoài tailnet không tới được (chỉ có nghĩa khi dùng Serve, không dùng Funnel).
 
 ## 15. Nguồn
 - Đặc tả MCP, mục Tools: https://modelcontextprotocol.io/specification/latest/server/tools
